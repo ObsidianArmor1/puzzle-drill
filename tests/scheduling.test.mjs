@@ -262,4 +262,55 @@ test('importing sets keeps the more recently updated copy', () => {
   assert.equal(S.getCustomSet(a.id).name, 'A');
 });
 
+// ---------------- sharing ----------------
+test('rule-based sets share as their rule and rebuild the same puzzles', () => {
+  const data = mkData();
+  const rule = { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'topN', n: 12 }, themes: ['BURN', 'DIG'] };
+  const set = S.saveSet({ name: 'Burns & digs', ids: S.evaluateRule(data, rule).map((p) => p.id), rule });
+  const { kind, payload } = S.sharePayload(set);
+  assert.equal(kind, 'rule');
+  assert.ok(payload.length < 300);
+  const got = S.parseShare(payload, data);
+  assert.equal(got.name, 'Burns & digs');
+  assert.deepEqual(got.ids, set.ids);
+  assert.deepEqual(got.rule, rule);
+});
+
+test('sets with personal or random rules share their puzzle list instead', () => {
+  const data = mkData();
+  P.record('r4-0', true);
+  const rule = { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'topN', n: 5 }, status: 'new' };
+  const set = S.saveSet({ name: 'Mine', ids: S.evaluateRule(data, rule).map((p) => p.id), rule });
+  const { kind, payload } = S.sharePayload(set);
+  assert.equal(kind, 'codes');
+  const got = S.parseShare(payload, data);
+  assert.deepEqual(got.ids, set.ids);
+  assert.equal(got.rule, undefined);
+});
+
+test('handpicked sets round-trip through puzzle codes; unknown and cut-off links are handled', () => {
+  const data = mkData();
+  const set = S.saveSet({ name: 'Hand', ids: ['r3-5', 'r5-80', 'r4-9'] });
+  const { kind, payload } = S.sharePayload(set);
+  assert.equal(kind, 'codes');
+  assert.deepEqual(S.parseShare(payload, data).ids, set.ids);
+  const withUnknown = payload + 'ZZZZZZ';
+  assert.equal(S.parseShare(withUnknown, data).unknown, 1);
+  assert.throws(() => S.parseShare(payload.slice(0, -2), data), /no valid puzzle list/);
+  assert.throws(() => S.parseShare('n=x&r=bm90LWpzb24', data));
+});
+
+test('set files round-trip, drop unknown puzzles, and names stay unique', () => {
+  const data = mkData();
+  const rule = { ...S.DEFAULT_RULE, ratings: [3], difficulty: { type: 'topN', n: 3 } };
+  const set = S.saveSet({ name: 'File set', ids: ['r3-0', 'r3-1', 'nope'], rule });
+  const got = S.parseSetFile(S.setFile(set), data);
+  assert.deepEqual(got.ids, ['r3-0', 'r3-1']);
+  assert.equal(got.unknown, 1);
+  assert.deepEqual(got.rule, rule);
+  assert.throws(() => S.parseSetFile('{"kind":"other"}', data), /Not a Puzzle Drill set file/);
+  assert.equal(S.uniqueName('File set'), 'File set (2)');
+  assert.equal(S.uniqueName('Fresh'), 'Fresh');
+});
+
 process.on('exit', () => { Date.now = realNow; });

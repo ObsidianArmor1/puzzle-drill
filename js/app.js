@@ -2,6 +2,7 @@ import { loadAll, decode, matchSubmission } from './data.js';
 import {
   listSets, getCustomSet, saveSet, deleteSet, togglePuzzle, importSets, resolveSet, evaluateRule, describeRule,
   ratingKey, customKey, DEFAULT_RULE, THEMES, STATUS_OPTIONS,
+  sharePayload, parseShare, setFile, parseSetFile, ruleIsPortable, uniqueName,
 } from './sets.js';
 import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES, orderNew } from './session.js';
@@ -88,6 +89,11 @@ const go = (hash) => { if (location.hash === hash) route(); else location.hash =
 // ---------- routing ----------
 let migrated = false;
 async function route() {
+  if (location.hash.startsWith('#/shared/')) {
+    const data = await loadAll();
+    const payload = location.hash.slice('#/shared/'.length);
+    return receiveView(data, () => parseShare(payload, data));
+  }
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   const data = await loadAll();
   if (!migrated) { migrated = true; migrateSettings(data); }
@@ -95,6 +101,7 @@ async function route() {
   if (parts[0] === 'play') return playView(data, parts[1], legacy(parts[2]));
   if (parts[0] === 'puzzle') return puzzleView(data, parts[1]);
   if (parts[0] === 'browse') return browseView(data, legacy(parts[1]) || currentSet(data)?.key);
+  if (parts[0] === 'share') return shareView(data, parts[1]);
   if (parts[0] === 'sets' && parts[1] === 'new') return builderView(data, null);
   if (parts[0] === 'sets' && parts[1] === 'edit') return builderView(data, parts[2]);
   return homeView(data);
@@ -169,6 +176,7 @@ function homeView(data) {
         <div class="row set-head"><h3>${sel.kind === 'rating' ? `${sel.rating}★ puzzles` : esc(sel.name)}</h3>
           <div class="row set-actions">
             ${solidButton({ label: 'Browse', color: '#2F3033', id: 'set-browse' })}
+            ${sel.kind === 'custom' ? solidButton({ label: 'Share', color: '#2F3033', id: 'set-share' }) : ''}
             ${sel.kind === 'custom' ? solidButton({ label: sel.set.rule ? 'Edit' : 'Rename', color: '#2F3033', id: 'set-edit' }) : ''}
             ${sel.kind === 'custom' && sel.set.rule ? solidButton({ label: 'Refresh', color: '#2F3033', id: 'set-refresh' }) : ''}
             ${sel.kind === 'custom' ? solidButton({ label: 'Delete', color: '#B73C3C', id: 'set-delete' }) : ''}
@@ -237,6 +245,7 @@ function homeView(data) {
   root.querySelectorAll('.option[data-mode]').forEach((b) => (b.onclick = () => go(`#/play/${b.dataset.mode}/${sel.key}`)));
   root.querySelector('#set-browse')?.addEventListener('click', () => go(`#/browse/${sel.key}`));
   root.querySelector('#set-edit')?.addEventListener('click', () => go(`#/sets/edit/${sel.set.id}`));
+  root.querySelector('#set-share')?.addEventListener('click', () => go(`#/share/${sel.set.id}`));
   root.querySelector('#set-refresh')?.addEventListener('click', () => {
     const ids = evaluateRule(data, sel.set.rule).map((p) => p.id);
     const added = ids.filter((id) => !sel.set.ids.includes(id)).length, removed = sel.set.ids.filter((id) => !ids.includes(id)).length;
@@ -366,6 +375,7 @@ function builderView(data, editId) {
       <div class="row builder-buttons">
         ${solidButton({ label: existing ? 'Save set' : 'Create set', color: '#54A165', id: 'b-save' })}
         ${!existing ? solidButton({ label: 'Start an empty set to handpick', color: '#2F3033', id: 'b-empty' }) : ''}
+        ${!existing ? `<label class="solid-button" style="cursor:pointer"><span class="button" style="background-color:#2F3033"><span class="label">Import a set file</span></span><input type="file" id="b-import" accept=".json,application/json" hidden></label>` : ''}
       </div>
     </div>`, 'scroll');
 
@@ -455,6 +465,14 @@ function builderView(data, editId) {
     toast(existing ? 'Set saved' : `Created "${finalName}"`);
     go('#/');
   };
+  $('#b-import')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    receiveView(data, () => {
+      try { return parseSetFile(text, data); } catch (err) { throw new Error(err instanceof SyntaxError ? 'That file is not valid JSON' : err.message); }
+    }, 'file');
+  });
   $('#b-empty')?.addEventListener('click', () => {
     const finalName = nameTouched && nameEl.value.trim() ? nameEl.value.trim() : 'My set';
     const set = saveSet({ name: finalName, ids: [] });
@@ -466,6 +484,96 @@ function builderView(data, editId) {
   onKey((e) => { if (e.key === 'Escape') go('#/'); });
 }
 const currentRatingGuess = (data) => (data.byRating.get(4)?.length ? 4 : [...data.byRating.keys()][0]);
+
+// =====================================================================================
+// SHARE / RECEIVE SETS
+// =====================================================================================
+const DISCORD_LIMIT = 2000;
+const downloadText = (text, filename) => {
+  const blob = new Blob([text], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+const fileSafe = (name) => name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 50) || 'set';
+
+function shareView(data, setId) {
+  const set = getCustomSet(setId);
+  if (!set) return go('#/');
+  const { kind, payload } = sharePayload(set);
+  const link = `${location.origin}${location.pathname}#/shared/${payload}`;
+  const fits = link.length <= DISCORD_LIMIT;
+  const how = kind === 'rule'
+    ? 'This link carries the set\'s rules, so it stays short and the recipient gets exactly the same puzzles, plus Edit and Refresh.'
+    : `This link lists the ${set.ids.length.toLocaleString()} puzzles by short codes.${set.rule && !ruleIsPortable(set.rule) ? ' (Its rules depend on your own progress or randomness, so the puzzle list is shared instead.)' : ''}`;
+  const root = setView(`
+    ${outlineButton('Exit', 'leave-fullscreen-button', 'exit')}
+    <div class="home builder">
+      <header><h1 class="title">SHARE</h1></header>
+      <div class="panel">
+        <h3 class="share-name">${esc(set.name)}</h3>
+        <p>${set.ids.length.toLocaleString()} puzzles. ${how}</p>
+      </div>
+      <div class="panel">
+        <h4>Link</h4>
+        <textarea id="share-link" class="share-link" readonly rows="${Math.min(6, Math.ceil(link.length / 90))}">${esc(link)}</textarea>
+        <div class="row">
+          ${solidButton({ label: 'Copy link', color: '#54A165', id: 'copy-link' })}
+          <span class="${fits ? '' : 'warn-text'}">${link.length.toLocaleString()} characters${fits ? ' · fits in a Discord message' : ' · too long for a Discord message (2,000 max): send the file instead'}</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h4>File</h4>
+        <p>Works for any set, however big. The recipient opens <b>+ New set → Import a set file</b>.</p>
+        <div class="row">${solidButton({ label: 'Download set file', color: '#2F3033', id: 'dl-file' })}</div>
+      </div>
+    </div>`, 'scroll');
+  const ta = root.querySelector('#share-link');
+  ta.onclick = () => ta.select();
+  root.querySelector('#copy-link').onclick = () => navigator.clipboard?.writeText(link).then(() => toast('Link copied'), () => { ta.select(); toast('Press Cmd+C to copy'); });
+  root.querySelector('#dl-file').onclick = () => downloadText(setFile(set), `${fileSafe(set.name)}.puzzle-set.json`);
+  root.querySelector('#exit').onclick = () => go('#/');
+  onKey((e) => { if (e.key === 'Escape') go('#/'); });
+}
+
+// Preview of a set arriving by link or file, with "Add to library"
+function receiveView(data, parse, source = 'link') {
+  let shared, error = null;
+  try { shared = parse(); } catch (e) { error = e.message || 'Could not read this set'; }
+  const puzzles = shared ? shared.ids.map((id) => data.byId.get(id)).filter(Boolean) : [];
+  const sum = summarize(puzzles);
+  const rates = puzzles.filter((p) => p.successRate !== undefined).map((p) => p.successRate);
+  const pc = (x) => `${Math.round(x * 100)}%`;
+  const byRating = [1, 2, 3, 4, 5, 6].map((r) => [r, puzzles.filter((p) => p.rating === r).length]).filter(([, n]) => n);
+  const root = setView(`
+    ${outlineButton('Exit', 'leave-fullscreen-button', 'exit')}
+    <div class="home builder">
+      <header><h1 class="title">SHARED SET</h1></header>
+      ${error ? `<div class="panel"><p class="warn-text"><b>${esc(error)}.</b> ${source === 'file' ? 'Check that this is a set file downloaded from a Share page.' : 'The link may have been cut off when it was copied.'}</p></div>` : `
+      <div class="panel preview">
+        <h3 class="share-name">${esc(shared.name)}</h3>
+        <p class="big-count"><b>${puzzles.length.toLocaleString()}</b> puzzles${byRating.length ? ` · ${byRating.map(([r, n]) => `${n.toLocaleString()} × ${r}★`).join(', ')}` : ''}</p>
+        ${shared.rule ? `<p>Rules: ${esc(describeRule(shared.rule, PUZZLE_THEME_TEXT))}</p>` : ''}
+        ${rates.length ? `<p>Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org.</p>` : ''}
+        <p>You've already seen ${sum.seen.toLocaleString()} of these and mastered ${sum.mastered.toLocaleString()}; that progress carries over.</p>
+        ${shared.unknown ? `<p class="warn-text">${shared.unknown.toLocaleString()} puzzle(s) in this set aren't in the site's puzzle data and will be left out.</p>` : ''}
+      </div>
+      <div class="row builder-buttons">
+        ${solidButton({ label: 'Add to library', color: '#54A165', id: 'add-shared' })}
+        ${solidButton({ label: 'Cancel', color: '#2F3033', id: 'cancel' })}
+      </div>`}
+    </div>`, 'scroll');
+  root.querySelector('#exit').onclick = () => go('#/');
+  root.querySelector('#cancel')?.addEventListener('click', () => go('#/'));
+  root.querySelector('#add-shared')?.addEventListener('click', () => {
+    const set = saveSet({ name: uniqueName(shared.name), ids: puzzles.map((p) => p.id), ...(shared.rule ? { rule: shared.rule } : {}) });
+    setSettings({ setKey: customKey(set.id) });
+    toast(`Added "${set.name}" to your library`);
+    go('#/');
+  });
+  onKey((e) => { if (e.key === 'Escape') go('#/'); });
+}
 
 // ---------- keybinds ----------
 const KEY_NAMES = {

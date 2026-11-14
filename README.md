@@ -18,6 +18,8 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 - **From rules** (+ New set): pick star ratings, then *hardest N* / *hardest X%* / a difficulty range (ranked by how rarely players solve each puzzle on nestris.org), and optionally narrow by global success rate, theme (Stacking, Overhangs, Burns, Digging, Spires), your progress (new, not mastered, missed before…) and a size cap. A live preview shows how many puzzles match. The list is saved when you create the set; **Refresh** re-applies the rules later.
 - **By hand**: in Browse, choose a set under *Collect into* and click **+** on puzzles; or use *Add this puzzle to a set* on the solution screen while drilling.
 
+**Sharing sets**: *Share* on a custom set gives a link and a downloadable set file. Sets built from rules travel as their rules (a short link that rebuilds the same puzzles, with Edit/Refresh intact). Handpicked sets, or rules that depend on your own progress or randomness, travel as 6-character puzzle codes; the page says if the link is too long for a Discord message, in which case send the file (recipient: *+ New set → Import a set file*). Opening a link or file shows a preview with *Add to library*.
+
 Progress belongs to the puzzle, so a new set immediately shows what you already know about its puzzles. The modes, home stats and Browse all work on the selected set.
 
 Controls are the same as nestris.org: hover to move, click to place, Z/X to rotate, Q to undo.

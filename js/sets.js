@@ -146,3 +146,91 @@ export function describeRule(rule, themeText = {}) {
   if (rule.limit) parts.push(`max ${rule.limit}${rule.limitOrder === 'random' ? ' random' : ''}`);
   return parts.join(' · ');
 }
+
+// ---------- sharing ----------
+// Links: rule-based sets travel as their rule ("r="), everything else as 6-character puzzle codes ("h=").
+// Files: { kind: 'puzzle-drill-set', version: 1, name, rule?, ids } with full puzzle IDs.
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+// cyrb53 string hash (53 bits); the low 36 bits become a 6-character URL-safe code
+function cyrb53(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+export function puzzleCode(id) {
+  let n = cyrb53(id) % 2 ** 36, s = '';
+  for (let i = 0; i < 6; i++) { s += B64[n % 64]; n = Math.floor(n / 64); }
+  return s;
+}
+let codeIndex = null; // Map code -> id, built once per data load
+function codeMap(data) {
+  if (!codeIndex || codeIndex.data !== data) {
+    const map = new Map();
+    for (const id of data.byId.keys()) map.set(puzzleCode(id), id);
+    codeIndex = { data, map };
+  }
+  return codeIndex.map;
+}
+
+const toB64url = (str) => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64url = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
+
+/** A rule can be shared as-is if it gives everyone the same puzzles (no personal progress filter, no randomness). */
+export const ruleIsPortable = (rule) => !!rule && (!rule.status || rule.status === 'any') && !(rule.limit && rule.limitOrder === 'random');
+
+/** Payload for the part of a share link after "#/shared/". */
+export function sharePayload(set) {
+  const name = `n=${encodeURIComponent(set.name)}`;
+  if (ruleIsPortable(set.rule)) {
+    // leave out values that match the defaults to keep links short
+    const r = Object.fromEntries(Object.entries(set.rule).filter(([k, v]) =>
+      v !== null && v !== undefined && !(k === 'status' && v === 'any') && !(k === 'limitOrder' && v === 'hardest')));
+    return { kind: 'rule', payload: `${name}&r=${toB64url(JSON.stringify(r))}` };
+  }
+  return { kind: 'codes', payload: `${name}&h=${set.ids.map(puzzleCode).join('')}` };
+}
+
+/** Parse a share payload into { name, rule?, ids, unknown }. Throws on malformed input. */
+export function parseShare(payload, data) {
+  const params = new URLSearchParams(payload);
+  const name = (params.get('n') || 'Shared set').slice(0, 80);
+  if (params.has('r')) {
+    const raw = JSON.parse(fromB64url(params.get('r')));
+    if (!raw || !Array.isArray(raw.ratings) || !raw.difficulty) throw new Error('This link has no valid set rules');
+    const rule = { ...DEFAULT_RULE, ...raw };
+    return { name, rule, ids: evaluateRule(data, rule).map((p) => p.id), unknown: 0 };
+  }
+  const h = params.get('h') || '';
+  if (!h || h.length % 6 || /[^A-Za-z0-9_-]/.test(h)) throw new Error('This link has no valid puzzle list');
+  const map = codeMap(data);
+  const ids = [];
+  let unknown = 0;
+  for (let i = 0; i < h.length; i += 6) { const id = map.get(h.slice(i, i + 6)); if (id) ids.push(id); else unknown++; }
+  return { name, ids: [...new Set(ids)], unknown };
+}
+
+export function setFile(set) {
+  return JSON.stringify({ kind: 'puzzle-drill-set', version: 1, name: set.name, ...(set.rule ? { rule: set.rule } : {}), ids: set.ids }, null, 1);
+}
+/** Parse a set file into { name, rule?, ids, unknown }. */
+export function parseSetFile(text, data) {
+  const json = JSON.parse(text);
+  if (json.kind !== 'puzzle-drill-set' || !Array.isArray(json.ids)) throw new Error('Not a Puzzle Drill set file');
+  const ids = [...new Set(json.ids.filter((id) => typeof id === 'string'))];
+  const known = ids.filter((id) => data.byId.has(id));
+  return { name: String(json.name || 'Imported set').slice(0, 80), rule: json.rule && typeof json.rule === 'object' ? json.rule : undefined, ids: known, unknown: ids.length - known.length };
+}
+
+/** A name not already used in the library ("Name", "Name (2)", ...). */
+export function uniqueName(name) {
+  const taken = new Set(read().map((s) => s.name));
+  if (!taken.has(name)) return name;
+  for (let i = 2; ; i++) if (!taken.has(`${name} (${i})`)) return `${name} (${i})`;
+}
