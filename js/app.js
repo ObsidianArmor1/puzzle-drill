@@ -151,7 +151,7 @@ function homeView(data) {
   const selInfo = !sel ? '' : [
     sel.kind === 'custom' ? (sel.set.rule ? esc(describeRule(sel.set.rule, PUZZLE_THEME_TEXT)) : 'Handpicked') : `All ${sel.rating}★ puzzles`,
     `${list.length.toLocaleString()} puzzles`,
-    rates.length ? `solved by ${pct(Math.min(...rates))}–${pct(Math.max(...rates))} of players` : '',
+    rates.length && !(sel.set?.rule?.success && (sel.set.rule.success.min > 0 || sel.set.rule.success.max < 100)) ? `solved by ${pct(Math.min(...rates))}–${pct(Math.max(...rates))} of players` : '',
     sel.missing ? `${sel.missing} no longer in the data` : '',
   ].filter(Boolean).join(' · ');
 
@@ -174,13 +174,16 @@ function homeView(data) {
     : `Nothing yet today${daily.streak ? ` · keep your ${daily.streak}-day streak going` : ''}`;
   const showIntro = !s.introDone && progressCount() === 0;
 
-  const modeCard = (mode, badge, extra = '') => `
-    <button class="option${list.length ? '' : ' locked'}" data-mode="${mode}">
-      <img class="prevent-select" src="assets/${MODES[mode].icon}" width="64">
-      <div class="text">
-        <h1 class="prevent-select">${MODES[mode].label}${badge !== undefined && badge !== '' ? `<span class="badge">${badge}</span>` : ''}</h1>
-        <p class="prevent-select">${MODES[mode].description}${extra}</p>
-      </div>
+  const modeHints = {
+    learn: `${MODES.learn.description} ${sum ? `${sum.due + sum.learning} due, up to ${s.newPerSession} new${learnNext}.` : ''}`,
+    run: `${MODES.run.description} Picks ${Math.min(s.runSize, list.length)} from: ${{ unmastered: 'not yet mastered', random: 'the whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}.`,
+    mistakes: MODES.mistakes.description,
+    endless: MODES.endless.description,
+  };
+  const modeBtn = (mode, badge) => `
+    <button class="mode-btn${list.length ? '' : ' locked'}" data-mode="${mode}">
+      <img class="prevent-select" src="assets/${MODES[mode].icon}" width="30" height="30">
+      <span class="prevent-select">${MODES[mode].label}</span>${badge !== undefined && badge !== '' ? `<span class="badge">${badge}</span>` : ''}
     </button>`;
 
   const root = setView(`
@@ -213,12 +216,6 @@ function homeView(data) {
 
       ${data.byId.size ? '' : `<div class="panel"><p><b>No puzzles loaded.</b> The puzzle data failed to load; try refreshing the page.</p></div>`}
 
-      <h2 class="section">Library</h2>
-      <div class="rating-row library">
-        ${lib.map(card).join('')}
-        <button class="rating-card lib-card new-set" id="new-set"><span class="plus">+</span><div class="small">New set</div></button>
-      </div>
-
       ${sel ? `<div class="panel set-panel">
         <div class="row set-head"><h3>${sel.kind === 'rating' ? `${sel.rating}★ puzzles` : esc(sel.name)}</h3>
           <div class="row set-actions">
@@ -232,30 +229,42 @@ function homeView(data) {
           </div></div>
         <p>${selInfo}</p>
         ${sel.kind === 'custom' && !list.length ? '<p>This set is empty. Open <b>Browse</b> on any set and use "Collect into" to handpick puzzles for it.</p>' : ''}
+        ${sum ? `<div class="summary-row">
+          <div class="summary-chip"><span class="v">${Math.round((sum.mastered / sum.total) * 1000) / 10}%</span><span class="k">mastered</span></div>
+          <div class="summary-chip"><span class="v">${sum.due + sum.learning}</span><span class="k">due now</span></div>
+          <div class="summary-chip"><span class="v">${(sum.total - sum.seen).toLocaleString()}</span><span class="k">never seen</span></div>
+          <div class="summary-chip"><span class="v">${sum.attempts ? Math.round((sum.correct / sum.attempts) * 100) + '%' : '–'}</span><span class="k">accuracy</span></div>
+        </div>` : ''}
+        <div class="mode-row">
+          ${modeBtn('learn', sum ? (sum.due + sum.learning || '') : '')}
+          ${modeBtn('run', Math.min(s.runSize, list.length) || '')}
+          ${modeBtn('mistakes', mistakes || '')}
+          ${modeBtn('endless', '')}
+        </div>
+        <p class="mode-hint" id="mode-hint">${modeHints.learn}</p>
       </div>` : ''}
 
-      ${sum ? `<div class="summary-row">
-        <div class="summary-chip"><span class="v">${Math.round((sum.mastered / sum.total) * 1000) / 10}%</span><span class="k">mastered</span></div>
-        <div class="summary-chip"><span class="v">${sum.due + sum.learning}</span><span class="k">due now</span></div>
-        <div class="summary-chip"><span class="v">${(sum.total - sum.seen).toLocaleString()}</span><span class="k">never seen</span></div>
-        <div class="summary-chip"><span class="v">${sum.attempts ? Math.round((sum.correct / sum.attempts) * 100) + '%' : '–'}</span><span class="k">accuracy</span></div>
-      </div>` : ''}
-
-      <h2 class="section">Modes</h2>
-      <div class="options">
-        ${modeCard('learn', sum ? (sum.due + sum.learning || '') : '', sum ? ` <b>${sum.due + sum.learning}</b> due, up to <b>${s.newPerSession}</b> new${learnNext}.` : '')}
-        ${modeCard('run', s.runSize, ` Picks from: <b>${{ unmastered: 'not yet mastered', random: 'whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}</b>.`)}
-        ${modeCard('mistakes', mistakes || '')}
-        ${modeCard('endless', '')}
+      <h2 class="section">Library</h2>
+      <div class="rating-row library">
+        ${lib.map(card).join('')}
+        <button class="rating-card lib-card new-set" id="new-set"><span class="plus">+</span><div class="small">New set</div></button>
       </div>
-
     </div>`, 'scroll');
 
-  root.querySelectorAll('.lib-card[data-key]').forEach((b) => (b.onclick = () => { setSettings({ setKey: b.dataset.key }); homeView(data); }));
+  root.querySelectorAll('.lib-card[data-key]').forEach((b) => (b.onclick = () => {
+    setSettings({ setKey: b.dataset.key });
+    homeView(data);
+    app.firstElementChild?.querySelector('.set-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }));
   root.querySelector('#new-set').onclick = () => go('#/sets/new');
   root.querySelector('#continue')?.addEventListener('click', () => go(`#/play/${contMode}/${sel.key}`));
   root.querySelector('#intro-done')?.addEventListener('click', () => { setSettings({ introDone: true }); homeView(data); });
-  root.querySelectorAll('.option[data-mode]').forEach((b) => (b.onclick = () => go(`#/play/${b.dataset.mode}/${sel.key}`)));
+  const hint = root.querySelector('#mode-hint');
+  root.querySelectorAll('.mode-btn[data-mode]').forEach((b) => {
+    b.onclick = () => go(`#/play/${b.dataset.mode}/${sel.key}`);
+    b.onmouseenter = () => { hint.textContent = ''; hint.innerHTML = modeHints[b.dataset.mode]; };
+  });
+  root.querySelector('.mode-row')?.addEventListener('mouseleave', () => { hint.innerHTML = modeHints.learn; });
   root.querySelector('#set-browse')?.addEventListener('click', () => go(`#/browse/${sel.key}`));
   root.querySelector('#set-edit')?.addEventListener('click', () => go(`#/sets/edit/${sel.set.id}`));
   root.querySelector('#set-share')?.addEventListener('click', () => go(`#/share/${sel.kind === 'custom' ? sel.set.id : sel.key}`));
