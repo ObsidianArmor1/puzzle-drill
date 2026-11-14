@@ -13,6 +13,8 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 - **Endless**: random puzzles from the set.
 - **Browse**: every puzzle as a board thumbnail with your record on it. Click one to play it.
 
+**Difficulty range** (per star rating): limit every mode, the progress numbers and Browse to a slice of the set ranked by global difficulty, i.e. how rarely players solve each puzzle on nestris.org. There are presets (hardest 10% / 25% / 50%, easiest 50%) or a custom range such as "from the 5% to the 20% hardest". Only puzzles with engine details have a difficulty score.
+
 Controls are the same as nestris.org: hover to move, click to place, Z/X to rotate, Q to undo.
 After a puzzle: Enter/Space for the next one, R to retry, Esc to exit. Keys can be changed in Settings.
 On a phone, tap to preview a placement, tap the preview to place it, and use the on-screen rotate buttons.

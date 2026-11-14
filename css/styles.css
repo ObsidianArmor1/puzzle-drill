@@ -239,6 +239,15 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .panel input[type=text] { width: 28px; text-align: center; text-transform: uppercase; }
 .panel input { background: var(--dark); color: white; border: 1px solid #555; border-radius: 4px; padding: 3px 5px; font-family: var(--main-font); }
 .panel p { font-family: var(--main-font); font-size: 12px; opacity: 0.75; margin: 0; line-height: 1.5; }
+.pills { gap: 8px !important; }
+.pill {
+  font-family: var(--main-font); font-size: 13px; font-weight: 700; color: var(--puzzle);
+  border: 2px solid var(--puzzle); border-radius: 999px; padding: 4px 12px; transition: all 0.15s;
+}
+.pill:hover:not(:disabled) { filter: brightness(1.3); transform: scale(1.05); }
+.pill.active { background: var(--puzzle); color: white; }
+.pill:disabled { opacity: 0.35; cursor: not-allowed; }
+.diff-panel input[type=number] { width: 60px; }
 .footer { font-family: var(--main-font); font-size: 11px; opacity: 0.5; text-align: center; max-width: 640px; }
 
 /* ---------- summary (end of session) ---------- */

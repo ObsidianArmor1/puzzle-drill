@@ -1,4 +1,4 @@
-import { loadAll, decode, matchSubmission } from './data.js';
+import { loadAll, decode, matchSubmission, difficultySlice } from './data.js';
 import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES } from './session.js';
 import {
@@ -113,10 +113,24 @@ function homeView(data) {
     </button>`;
   }).join('');
 
-  const list = rating ? data.byRating.get(rating) : [];
-  const sum = rating ? summarize(list) : null;
+  const fullList = rating ? data.byRating.get(rating) : [];
+  const range = rangeFor(rating);
+  const sl = rating ? difficultySlice(data, rating, range) : { puzzles: [], all: true, ranked: 0, unranked: 0 };
+  const list = sl.puzzles;
+  const sum = rating && list.length ? summarize(list) : null;
   const mistakes = rating ? list.filter((p) => { const r = getRec(p.id); return r && (r.ok === false || r.c < r.n || r.b <= 1); }).length : 0;
-  const withDetails = rating ? list.filter((p) => p.hasDetails).length : 0;
+  const withDetails = rating ? fullList.filter((p) => p.hasDetails).length : 0;
+  const pct = (x) => (x === null || x === undefined ? '–' : `${Math.round(x * 100)}%`);
+  const presets = [['All', 0, 100], ['Hardest 10%', 0, 10], ['Hardest 25%', 0, 25], ['Hardest 50%', 0, 50], ['Easiest 50%', 50, 100]];
+  const isPreset = (f, t) => Math.abs(range.from - f) < 1e-9 && Math.abs(range.to - t) < 1e-9;
+  const rangeText = sl.all ? `the whole ${rating}★ set`
+    : range.from <= 0 ? `the hardest ${fmtPct(range.to)}`
+    : range.to >= 100 ? `the easiest ${fmtPct(100 - range.from)}`
+    : `the ${fmtPct(range.from)}–${fmtPct(range.to)} hardest`;
+  const diffInfo = !rating ? '' : sl.all
+    ? `Drilling all ${fullList.length.toLocaleString()} ${rating}★ puzzles.${sl.ranked ? ` ${sl.ranked.toLocaleString()} of them have a difficulty score.` : ''}`
+    : `Drilling <b>${list.length.toLocaleString()}</b> of ${sl.ranked.toLocaleString()} ranked ${rating}★ puzzles: ${rangeText}, solved by <b>${pct(sl.hardest)}–${pct(sl.easiest)}</b> of players on nestris.org.`
+      + (sl.unranked ? ` ${sl.unranked.toLocaleString()} puzzles without a difficulty score are left out.` : '');
 
   const modeCard = (mode, badge, extra = '') => `
     <button class="option${rating ? '' : ' locked'}" data-mode="${mode}">
@@ -136,6 +150,16 @@ function homeView(data) {
 
       <h2 class="section">Puzzle set</h2>
       <div class="rating-row">${ratingCards}</div>
+
+      ${rating ? `<h2 class="section">Difficulty</h2>
+      <div class="panel diff-panel">
+        <div class="row pills">${presets.map(([label, f, t]) => `<button class="pill${isPreset(f, t) ? ' active' : ''}" data-from="${f}" data-to="${t}"${!sl.ranked && (f > 0 || t < 100) ? ' disabled' : ''}>${label}</button>`).join('')}</div>
+        <div class="row">
+          <label>Custom: from the <input type="number" id="rng-from" min="0" max="99.9" step="any" value="${range.from}">% to the <input type="number" id="rng-to" min="0.1" max="100" step="any" value="${range.to}">% hardest</label>
+          ${solidButton({ label: 'Apply', color: '#2F3033', id: 'rng-apply' })}
+        </div>
+        <p>${diffInfo} Difficulty = how rarely players solve the puzzle on nestris.org. The modes and the numbers below use only this range.</p>
+      </div>` : ''}
 
       ${sum ? `<div class="summary-row">
         <div class="summary-chip"><span class="v">${Math.round((sum.mastered / sum.total) * 1000) / 10}%</span><span class="k">mastered</span></div>
@@ -203,15 +227,37 @@ function homeView(data) {
 
   root.querySelector('#reset-r')?.addEventListener('click', () => {
     if (!confirm(`Erase all your progress on the ${rating}★ puzzles? This cannot be undone.`)) return;
-    resetProgress(list.map((p) => p.id)); toast('Progress reset'); homeView(data);
+    resetProgress(fullList.map((p) => p.id)); toast('Progress reset'); homeView(data);
+  });
+
+  const setRange = (from, to) => {
+    const diff = { ...(getSettings().diff || {}) };
+    diff[rating] = { from, to };
+    setSettings({ diff });
+    homeView(data);
+  };
+  root.querySelectorAll('.pill[data-from]').forEach((b) => (b.onclick = () => setRange(Number(b.dataset.from), Number(b.dataset.to))));
+  root.querySelector('#rng-apply')?.addEventListener('click', () => {
+    let from = Number(root.querySelector('#rng-from').value), to = Number(root.querySelector('#rng-to').value);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return toast('Enter two percentages');
+    from = Math.max(0, Math.min(99.9, from)); to = Math.max(0.1, Math.min(100, to));
+    if (to <= from) return toast('"To" must be bigger than "from"');
+    setRange(from, to);
   });
 }
+
+// Difficulty range chosen for a rating (percent of the ranked list, hardest first)
+function rangeFor(rating) {
+  const r = getSettings().diff?.[rating];
+  return r && Number.isFinite(r.from) && Number.isFinite(r.to) ? r : { from: 0, to: 100 };
+}
+const fmtPct = (x) => `${Math.round(x * 10) / 10}%`;
 
 // =====================================================================================
 // PLAY
 // =====================================================================================
 function playView(data, mode, rating, opts = {}) {
-  const puzzles = data.byRating.get(rating);
+  const puzzles = difficultySlice(data, rating, rangeFor(rating)).puzzles;
   if (!MODES[mode] || !puzzles?.length) return go('#/');
   const session = createSession(mode, rating, puzzles, { pick: getSettings().runPick || 'unmastered', ...opts });
   runSession(data, session);
@@ -282,6 +328,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
     const statsHTML = `
       <div class="puzzle-stats">
         <div class="stat"><h1>Puzzle Rating</h1>${stars(p.rating, 75)}</div>
+        ${p.hardRank ? `<div class="stat"><h1>Hardness rank</h1><p>#${p.hardRank.toLocaleString()} of ${(data.rankedByRating.get(p.rating)?.length ?? 0).toLocaleString()}</p></div>` : ''}
         ${successRate !== null ? `<div class="stat"><h1>Success Rate</h1><p>${(successRate * 100).toFixed(0)}%</p></div>` : ''}
         ${p.attempts ? `<div class="stat"><h1>Attempts</h1><p>${p.attempts.toLocaleString()}</p></div>` : ''}
         ${p.theme ? `<div class="stat"><h1>Theme</h1><p>${esc(PUZZLE_THEME_TEXT[p.theme] ?? p.theme)}</p></div>` : ''}
@@ -474,7 +521,8 @@ const PAGE = 48;
 let browseState = { filter: 'all', sort: 'id', page: 0, q: '' };
 
 function browseView(data, rating) {
-  const all = data.byRating.get(rating) || [];
+  const sl = difficultySlice(data, rating, browseState.useRange === false ? null : rangeFor(rating));
+  const all = sl.puzzles;
   const now = Date.now();
   const statusOf = (r) => (!r ? 'unseen' : r.b <= 1 ? 'learning' : r.b >= MASTERED_BOX ? 'mastered' : 'seen');
   let list = all.map((p) => ({ p, r: getRec(p.id) }));
@@ -506,6 +554,7 @@ function browseView(data, rating) {
         <select id="b-filter">${[['all', 'All'], ['unseen', 'Never seen'], ['due', 'Due for review'], ['learning', 'Missed last time'], ['missed', 'Ever missed'], ['mastered', 'Mastered']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <select id="b-sort">${[['id', 'Sort: ID'], ['accuracy', 'Sort: your accuracy'], ['recent', 'Sort: recently played'], ['global', 'Sort: hardest globally']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input id="b-q" placeholder="Search ID or theme" value="${esc(browseState.q)}" size="16">
+        ${sl.all && browseState.useRange !== false ? '' : `<select id="b-range"><option value="range"${browseState.useRange === false ? '' : ' selected'}>Your difficulty range</option><option value="all"${browseState.useRange === false ? ' selected' : ''}>Whole ${rating}★ set</option></select>`}
         <span>${list.length.toLocaleString()} puzzles</span>
       </div>
       <div class="grid" id="grid"></div>
@@ -534,6 +583,7 @@ function browseView(data, rating) {
   const rerender = () => browseView(data, rating);
   root.querySelector('#b-rating').onchange = (e) => { browseState.page = 0; go(`#/browse/${e.target.value}`); };
   root.querySelector('#b-filter').onchange = (e) => { browseState.filter = e.target.value; browseState.page = 0; rerender(); };
+  root.querySelector('#b-range')?.addEventListener('change', (e) => { browseState.useRange = e.target.value === 'range'; browseState.page = 0; rerender(); });
   root.querySelector('#b-sort').onchange = (e) => { browseState.sort = e.target.value; browseState.page = 0; rerender(); };
   let qTimer;
   root.querySelector('#b-q').oninput = (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { browseState.q = e.target.value.trim(); browseState.page = 0; rerender(); const q = document.querySelector('#b-q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }, 250); };

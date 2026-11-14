@@ -25,9 +25,39 @@ export function loadAll() {
       byRating.get(p.rating).push(p);
     }
     for (const list of byRating.values()) list.sort((a, b) => a.id.localeCompare(b.id));
-    return { byId, byRating, manifest };
+
+    // Difficulty ranking per rating: lowest global success rate first (hardest = rank 1).
+    // Only puzzles with engine details have attempt/solve counts, so only those are ranked.
+    const rankedByRating = new Map();
+    for (const [rating, list] of byRating) {
+      const ranked = list.filter((p) => p.attempts > 0)
+        .sort((a, b) => (a.solves / a.attempts) - (b.solves / b.attempts) || b.attempts - a.attempts || (a.id < b.id ? -1 : 1));
+      ranked.forEach((p, i) => { p.hardRank = i + 1; p.successRate = p.solves / p.attempts; });
+      rankedByRating.set(rating, ranked);
+    }
+    return { byId, byRating, rankedByRating, manifest };
   })();
   return cache;
+}
+
+/**
+ * The puzzles of a rating inside a difficulty range.
+ * range = { from, to } in percent of the ranked list, hardest first (e.g. {from: 0, to: 10} = hardest 10%).
+ * No range, or 0–100, means the whole set (including puzzles without a difficulty score).
+ */
+export function difficultySlice(data, rating, range) {
+  const all = data.byRating.get(rating) || [];
+  if (!range || (range.from <= 0 && range.to >= 100)) return { puzzles: all, all: true, ranked: (data.rankedByRating.get(rating) || []).length, unranked: 0 };
+  const ranked = data.rankedByRating.get(rating) || [];
+  const n = ranked.length;
+  const start = Math.max(0, Math.floor((range.from / 100) * n));
+  const end = Math.min(n, Math.max(start + (n ? 1 : 0), Math.ceil((range.to / 100) * n)));
+  const puzzles = ranked.slice(start, end);
+  return {
+    puzzles, all: false, ranked: n, unranked: all.length - n,
+    hardest: puzzles.length ? puzzles[0].successRate : null,
+    easiest: puzzles.length ? puzzles[puzzles.length - 1].successRate : null,
+  };
 }
 
 function add(byId, rec) {
