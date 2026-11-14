@@ -47,6 +47,13 @@ Then open http://127.0.0.1:8791/. Opening `index.html` directly from disk won't 
 Push this folder to a GitHub repo, then go to **Settings → Pages → Deploy from a branch → `main` / root**.
 Every path is relative, so it works at `https://<user>.github.io/<repo>/`.
 
+## Tests
+
+```bash
+npm test
+```
+Runs `tests/scheduling.test.mjs` with Node's built-in test runner. It covers the spaced-repetition rules, Learn ordering, Perfect Run, the difficulty slices and backup merging. Nothing to install.
+
 ## Files
 
 - `js/core.js`: nestris.org's `shared/` puzzle and tetris logic (board, pieces, puzzle ID decoding), bundled with esbuild. Don't edit it by hand.

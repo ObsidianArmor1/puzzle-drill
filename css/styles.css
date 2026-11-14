@@ -254,6 +254,8 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .pill.active { background: var(--puzzle); color: white; }
 .pill:disabled { opacity: 0.35; cursor: not-allowed; }
 .diff-panel input[type=number] { width: 60px; }
+.backup-status { opacity: 0.9 !important; }
+.backup-status.warn { color: var(--gold); opacity: 1 !important; }
 .footer { font-family: var(--main-font); font-size: 11px; opacity: 0.5; text-align: center; max-width: 640px; }
 
 /* ---------- summary (end of session) ---------- */

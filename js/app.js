@@ -3,7 +3,7 @@ import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES, orderNew } from './session.js';
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, isMastered, resetProgress, MASTERED_BOX,
-  exportProgress, importProgress,
+  exportProgress, importProgress, storageStatus, lastBackup, progressCount,
 } from './progress.js';
 import { PUZZLE_THEME_TEXT } from './core.js';
 
@@ -219,6 +219,7 @@ function homeView(data) {
           <label class="solid-button" style="cursor:pointer"><span class="button" style="background-color:#2F3033"><span class="label">Import progress</span></span><input type="file" id="imp-prog" accept=".json,application/json" hidden></label>
           ${solidButton({ label: `Reset ${rating}★ progress`, color: '#B73C3C', id: 'reset-r' })}
         </div>
+        <p id="backup-status" class="backup-status"></p>
         <p>Export saves a backup file of all your progress and settings. Import merges one in: for each puzzle, whichever copy was played more recently wins, so an old backup never overwrites newer progress.</p>
       </div>` : ''}
     </div>`, 'scroll');
@@ -241,6 +242,21 @@ function homeView(data) {
   bind('#set-run', 'runSize', (v) => Math.max(5, Math.min(2000, Number(v) || 50)));
   root.querySelector('#set-runpick').addEventListener('change', (e) => { setSettings({ runPick: e.target.value }); homeView(data); });
 
+  // Backup reminder + whether the browser has agreed to keep storage permanently
+  const bs = root.querySelector('#backup-status');
+  if (bs) storageStatus().then((st) => {
+    const lb = lastBackup();
+    const n = progressCount();
+    const days = lb ? Math.floor((Date.now() - lb) / 86400000) : null;
+    const when = lb === null ? 'never' : days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+    const stale = n >= 20 && (lb === null || days >= 14);
+    const kept = st === 'persisted'
+      ? 'This browser keeps your progress permanently.'
+      : 'This browser may clear your progress if storage runs low or you stay away for a while (Safari: 7 days), so keep a backup.';
+    bs.innerHTML = `<b>Last backup: ${when}.</b> ${n.toLocaleString()} puzzles have progress. ${kept}`;
+    bs.classList.toggle('warn', stale);
+  });
+
   root.querySelector('#exp-prog')?.addEventListener('click', () => {
     const blob = new Blob([exportProgress()], { type: 'application/json' });
     const a = document.createElement('a');
@@ -248,6 +264,7 @@ function homeView(data) {
     a.download = `puzzle-drill-progress-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    setTimeout(() => homeView(data), 300);
   });
   root.querySelector('#imp-prog')?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
