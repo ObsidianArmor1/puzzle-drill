@@ -105,11 +105,18 @@ export class PuzzleBoard {
     this.reset();
 
     this.onKey = (e) => {
-      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target instanceof HTMLInputElement) return;
       const key = e.key.toLowerCase();
-      if (key === this.keys.rotLeft.toLowerCase()) this.rotate(3);
-      else if (key === this.keys.rotRight.toLowerCase()) this.rotate(1);
-      else if (key === this.keys.undo.toLowerCase()) this.undo();
+      // Ignore shortcuts like Cmd+R, but allow a bare modifier (e.g. Shift or Ctrl) to be a keybind itself
+      const isModifier = ['shift', 'control', 'alt', 'meta'].includes(key);
+      if (!isModifier && (e.metaKey || e.ctrlKey || e.altKey)) return;
+      const k = (v) => String(v).toLowerCase();
+      let hit = true;
+      if (key === k(this.keys.rotLeft)) this.rotate(3);
+      else if (key === k(this.keys.rotRight)) this.rotate(1);
+      else if (key === k(this.keys.undo)) this.undo();
+      else hit = false;
+      if (hit) e.preventDefault(); // e.g. stop Space from scrolling or Tab from moving focus
     };
     window.addEventListener('keydown', this.onKey);
 

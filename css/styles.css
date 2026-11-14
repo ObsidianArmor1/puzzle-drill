@@ -239,6 +239,12 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .panel input[type=text] { width: 28px; text-align: center; text-transform: uppercase; }
 .panel input { background: var(--dark); color: white; border: 1px solid #555; border-radius: 4px; padding: 3px 5px; font-family: var(--main-font); }
 .panel p { font-family: var(--main-font); font-size: 12px; opacity: 0.75; margin: 0; line-height: 1.5; }
+.keybind {
+  min-width: 34px; padding: 3px 9px; border-radius: 5px; border: 1px solid #555; background: var(--dark);
+  font-family: var(--main-font); font-size: 13px; font-weight: 700; color: white;
+}
+.keybind:hover { border-color: var(--puzzle); }
+.keybind.listening { border-color: var(--puzzle); color: var(--puzzle); box-shadow: 0 0 10px rgba(186, 76, 255, 0.4); }
 .pills { gap: 8px !important; }
 .pill {
   font-family: var(--main-font); font-size: 13px; font-weight: 700; color: var(--puzzle);
@@ -264,9 +270,26 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .tile:hover { border-color: var(--puzzle); transform: scale(1.03); }
 .tile .meta { font-family: var(--main-font); font-size: 11px; width: 100%; display: flex; justify-content: space-between; opacity: 0.85; }
 .tile .pieces { display: flex; gap: 8px; align-items: center; height: 22px; }
-.tile.st-mastered { box-shadow: inset 0 -3px 0 var(--ui-green); }
-.tile.st-learning { box-shadow: inset 0 -3px 0 var(--ui-red); }
-.tile.st-seen { box-shadow: inset 0 -3px 0 rgba(88,215,116,0.4); }
+.tile.st-mastered { border-color: rgba(88, 215, 116, 0.55); }
+.tile.st-learning { border-color: rgba(241, 87, 87, 0.55); }
+.tile.st-progress { border-color: rgba(255, 185, 56, 0.35); }
+.tile:hover { border-color: var(--puzzle); }
+.st-badge {
+  font-family: var(--main-font); font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+}
+.st-badge.st-mastered { background: var(--ui-green); color: #0d2414; }
+.st-badge.st-progress { background: var(--gold); color: #2b1d00; }
+.st-badge.st-learning { background: var(--ui-red); color: #2b0606; }
+.st-badge.st-new { background: #4a4a50; color: #ddd; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.legend-item {
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px;
+  background: rgba(255,255,255,0.06); border: 2px solid transparent;
+  font-family: var(--main-font); font-size: 13px;
+}
+.legend-item:hover { background: rgba(255,255,255,0.12); }
+.legend-item.active { border-color: var(--puzzle); }
 .pager { display: flex; gap: 10px; align-items: center; font-family: var(--main-font); font-size: 13px; }
 
 /* ---------- toast ---------- */

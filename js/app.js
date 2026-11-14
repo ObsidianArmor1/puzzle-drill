@@ -192,8 +192,9 @@ function homeView(data) {
         <div class="row">
           <label><input type="checkbox" id="set-timed" ${s.timed ? 'checked' : ''}> 30-second timer</label>
           <label><input type="checkbox" id="set-sound" ${s.sound ? 'checked' : ''}> Sound</label>
-          <label>Rotate <input type="text" maxlength="1" id="set-rl" value="${esc(s.rotLeft)}"> <input type="text" maxlength="1" id="set-rr" value="${esc(s.rotRight)}"></label>
-          <label>Undo <input type="text" maxlength="1" id="set-undo" value="${esc(s.undo)}"></label>
+          <label>Rotate left <button class="keybind" data-setting="rotLeft">${esc(keyName(s.rotLeft))}</button></label>
+          <label>Rotate right <button class="keybind" data-setting="rotRight">${esc(keyName(s.rotRight))}</button></label>
+          <label>Undo <button class="keybind" data-setting="undo">${esc(keyName(s.undo))}</button></label>
         </div>
         <div class="row">
           <label>New per Learn session <input type="number" min="0" max="500" id="set-new" value="${s.newPerSession}"></label>
@@ -207,7 +208,7 @@ function homeView(data) {
               <option value="hardest">hardest first</option><option value="easiest">easiest first</option><option value="random">random order</option>
             </select></label>
         </div>
-        <p>Spaced repetition: a correct answer on a due puzzle schedules the next review in 1, 3, 7, 16, then 35 days. A miss sends it back to the start. A puzzle counts as <b>mastered</b> once it reaches the 7-day review stage. Keys during a puzzle: rotate ${esc(s.rotLeft.toUpperCase())}/${esc(s.rotRight.toUpperCase())}, undo ${esc(s.undo.toUpperCase())}. After it: Enter/Space next, R retry, Esc exit.</p>
+        <p>Spaced repetition: a correct answer on a due puzzle schedules the next review in 1, 3, 7, 16, then 35 days. A miss sends it back to the start. A puzzle counts as <b>mastered</b> once it reaches the 7-day review stage. Keys during a puzzle: rotate ${esc(keyName(s.rotLeft))}/${esc(keyName(s.rotRight))}, undo ${esc(keyName(s.undo))} (click a key button above, then press the key you want). After it: Enter/Space next, R retry, Esc exit.</p>
       </div>
 
       ${rating ? `<div class="panel">
@@ -229,9 +230,7 @@ function homeView(data) {
   };
   bind('#set-timed', 'timed');
   bind('#set-sound', 'sound');
-  bind('#set-rl', 'rotLeft', (v) => (v || 'z').toLowerCase(), 'input');
-  bind('#set-rr', 'rotRight', (v) => (v || 'x').toLowerCase(), 'input');
-  bind('#set-undo', 'undo', (v) => (v || 'q').toLowerCase(), 'input');
+  root.querySelectorAll('.keybind').forEach((btn) => (btn.onclick = () => captureKey(btn, () => homeView(data))));
   bind('#set-new', 'newPerSession', (v) => Math.max(0, Math.min(500, Number(v) || 0)));
   bind('#set-run', 'runSize', (v) => Math.max(5, Math.min(2000, Number(v) || 50)));
   root.querySelector('#set-runpick').addEventListener('change', (e) => { setSettings({ runPick: e.target.value }); homeView(data); });
@@ -255,6 +254,51 @@ function homeView(data) {
     if (to <= from) return toast('"To" must be bigger than "from"');
     setRange(from, to);
   });
+}
+
+// ---------- keybinds ----------
+const KEY_NAMES = {
+  ' ': 'Space', arrowleft: '←', arrowright: '→', arrowup: '↑', arrowdown: '↓', shift: 'Shift', control: 'Ctrl',
+  alt: 'Alt', meta: 'Cmd', capslock: 'Caps Lock', tab: 'Tab', backspace: 'Backspace', enter: 'Enter',
+};
+function keyName(k) {
+  const l = String(k ?? '').toLowerCase();
+  return KEY_NAMES[l] ?? (l.length === 1 ? l.toUpperCase() : l.charAt(0).toUpperCase() + l.slice(1));
+}
+const BIND_LABELS = { rotLeft: 'Rotate left', rotRight: 'Rotate right', undo: 'Undo' };
+
+// Click a key button, then press any key to bind it. Esc or clicking elsewhere cancels.
+let activeCapture = null;
+function captureKey(btn, done) {
+  activeCapture?.();
+  const setting = btn.dataset.setting;
+  const old = btn.textContent;
+  btn.textContent = 'Press a key…';
+  btn.classList.add('listening');
+  const finish = () => {
+    window.removeEventListener('keydown', onDown, true);
+    window.removeEventListener('pointerdown', onAway, true);
+    btn.classList.remove('listening');
+    activeCapture = null;
+  };
+  const cancel = () => { finish(); btn.textContent = old; };
+  const onAway = (e) => { if (e.target !== btn) cancel(); };
+  const onDown = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const key = e.key.toLowerCase();
+    if (key === 'escape') return cancel();
+    if (!key || key === 'dead' || key === 'unidentified') return; // keep listening
+    const s = getSettings();
+    const clash = Object.keys(BIND_LABELS).find((k) => k !== setting && String(s[k]).toLowerCase() === key);
+    if (clash) { toast(`${keyName(key)} is already used for ${BIND_LABELS[clash]}`); return cancel(); }
+    finish();
+    setSettings({ [setting]: key });
+    toast(`${BIND_LABELS[setting]}: ${keyName(key)}`);
+    done();
+  };
+  window.addEventListener('keydown', onDown, true);
+  window.addEventListener('pointerdown', onAway, true);
+  activeCapture = cancel;
 }
 
 // Difficulty range chosen for a rating (percent of the ranked list, hardest first)
@@ -387,7 +431,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
               </div>
               ${phase === 'solving' ? `
                 <div class="next-box-container" id="next-box">${pieceSVG(dec.next, s.level, 3)}</div>
-                <p class="instructions narrow">Hover your mouse on the board to move the piece! Rotate with ${esc(s.rotLeft.toUpperCase())} and ${esc(s.rotRight.toUpperCase())}.</p>
+                <p class="instructions narrow">Hover your mouse on the board to move the piece! Rotate with ${esc(keyName(s.rotLeft))} and ${esc(keyName(s.rotRight))}.</p>
                 <div class="touch-controls">${solidButton({ label: '⟲ Rotate', color: '#2F3033', id: 'rot-l' })}${solidButton({ label: 'Rotate ⟳', color: '#2F3033', id: 'rot-r' })}</div>
                 <div class="view-solution-button">${solidButton({ label: 'View Solution', icon: 'assets/img/button-icons/eye.svg', color: '#B73C3C', id: 'view-solution', paddingVertical: 10 })}</div>
               ` : `
@@ -535,14 +579,23 @@ function browseView(data, rating) {
   const sl = difficultySlice(data, rating, browseState.useRange === false ? null : rangeFor(rating));
   const all = sl.puzzles;
   const now = Date.now();
-  const statusOf = (r) => (!r ? 'unseen' : r.b <= 1 ? 'learning' : r.b >= MASTERED_BOX ? 'mastered' : 'seen');
-  let list = all.map((p) => ({ p, r: getRec(p.id) }));
-  const f = browseState.filter;
-  if (f === 'unseen') list = list.filter((x) => !x.r);
-  else if (f === 'missed') list = list.filter((x) => x.r && x.r.c < x.r.n);
-  else if (f === 'learning') list = list.filter((x) => x.r && x.r.b <= 1);
-  else if (f === 'due') list = list.filter((x) => x.r && x.r.b >= 2 && x.r.d <= now);
-  else if (f === 'mastered') list = list.filter((x) => isMastered(x.r));
+  // mastered: reached the 7-day stage · progress: answered correctly, not mastered yet
+  // learning: missed last time · new: never seen
+  const statusOf = (r) => (!r ? 'new' : r.b <= 1 ? 'learning' : r.b >= MASTERED_BOX ? 'mastered' : 'progress');
+  const withRec = all.map((p) => ({ p, r: getRec(p.id) }));
+  const tests = {
+    all: () => true,
+    mastered: (x) => statusOf(x.r) === 'mastered',
+    progress: (x) => statusOf(x.r) === 'progress',
+    learning: (x) => statusOf(x.r) === 'learning',
+    new: (x) => !x.r,
+    due: (x) => x.r && x.r.b >= 2 && x.r.d <= now,
+    missed: (x) => x.r && x.r.c < x.r.n,
+  };
+  const counts = Object.fromEntries(Object.entries(tests).map(([k, t]) => [k, withRec.filter(t).length]));
+  if (browseState.filter === 'unseen') browseState.filter = 'new';
+  const f = tests[browseState.filter] ? browseState.filter : 'all';
+  let list = withRec.filter(tests[f]);
   if (browseState.q) list = list.filter((x) => x.p.id.includes(browseState.q) || (x.p.theme || '').toLowerCase().includes(browseState.q.toLowerCase()));
   const acc = (r) => (r && r.n ? r.c / r.n : 2);
   const sorters = {
@@ -562,12 +615,14 @@ function browseView(data, rating) {
       <header><h1 class="title">BROWSE</h1></header>
       <div class="controls">
         <select id="b-rating">${[1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length).map((r) => `<option value="${r}"${r === rating ? ' selected' : ''}>${r}★ (${data.byRating.get(r).length.toLocaleString()})</option>`).join('')}</select>
-        <select id="b-filter">${[['all', 'All'], ['unseen', 'Never seen'], ['due', 'Due for review'], ['learning', 'Missed last time'], ['missed', 'Ever missed'], ['mastered', 'Mastered']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="b-filter">${[['all', 'All'], ['mastered', 'Mastered'], ['progress', 'In progress'], ['learning', 'Learning (missed last time)'], ['new', 'New (never seen)'], ['due', 'Due for review'], ['missed', 'Ever missed']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l} (${counts[v].toLocaleString()})</option>`).join('')}</select>
         <select id="b-sort">${[['id', 'Sort: ID'], ['accuracy', 'Sort: your accuracy'], ['recent', 'Sort: recently played'], ['global', 'Sort: hardest globally']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input id="b-q" placeholder="Search ID or theme" value="${esc(browseState.q)}" size="16">
         ${sl.all && browseState.useRange !== false ? '' : `<select id="b-range"><option value="range"${browseState.useRange === false ? '' : ' selected'}>Your difficulty range</option><option value="all"${browseState.useRange === false ? ' selected' : ''}>Whole ${rating}★ set</option></select>`}
         <span>${list.length.toLocaleString()} puzzles</span>
       </div>
+      <div class="legend">${[['mastered', 'Mastered', 'reached the 7-day review stage'], ['progress', 'In progress', 'answered correctly, not mastered yet'], ['learning', 'Learning', 'missed last time'], ['new', 'New', 'never seen']].map(([k, label, tip]) => `<button class="legend-item${f === k ? ' active' : ''}" data-filter="${k}" title="${tip}"><span class="st-badge st-${k}">${label}</span><b>${counts[k].toLocaleString()}</b></button>`).join('')}
+        ${f !== 'all' ? '<button class="legend-item" data-filter="all">Show all</button>' : ''}</div>
       <div class="grid" id="grid"></div>
       <div class="pager">
         ${solidButton({ label: '‹ Prev', color: '#2F3033', id: 'prev', disabled: browseState.page === 0 })}
@@ -582,10 +637,14 @@ function browseView(data, rating) {
     const d = decode(p);
     const tile = document.createElement('a');
     tile.href = `#/puzzle/${encodeURIComponent(p.id)}`;
-    tile.className = `tile st-${statusOf(r)}`;
+    const st = statusOf(r);
+    const label = { mastered: 'Mastered', progress: 'In progress', learning: 'Learning', new: 'New' }[st];
+    const review = !r ? '' : r.b <= 1 ? 'retry now' : r.d <= now ? 'review due' : `review in ${fmtInterval(r.d - now)}`;
+    tile.className = `tile st-${st}`;
     tile.innerHTML = `<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
-      <div class="meta"><span>${r ? `${r.c}/${r.n}` : 'new'}</span><span>${p.attempts ? Math.round((p.solves / p.attempts) * 100) + '% global' : ''}</span></div>`;
+      <div class="meta"><span class="st-badge st-${st}">${label}</span><span>${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
+      <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${p.attempts ? Math.round((p.solves / p.attempts) * 100) + '% global' : ''}</span></div>`;
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({ board: d.board, level: s.level });
     grid.appendChild(tile);
   }
@@ -593,6 +652,7 @@ function browseView(data, rating) {
   root.querySelector('#exit').onclick = () => go('#/');
   const rerender = () => browseView(data, rating);
   root.querySelector('#b-rating').onchange = (e) => { browseState.page = 0; go(`#/browse/${e.target.value}`); };
+  root.querySelectorAll('.legend-item[data-filter]').forEach((b) => (b.onclick = () => { browseState.filter = b.dataset.filter; browseState.page = 0; rerender(); }));
   root.querySelector('#b-filter').onchange = (e) => { browseState.filter = e.target.value; browseState.page = 0; rerender(); };
   root.querySelector('#b-range')?.addEventListener('change', (e) => { browseState.useRange = e.target.value === 'range'; browseState.page = 0; rerender(); });
   root.querySelector('#b-sort').onchange = (e) => { browseState.sort = e.target.value; browseState.page = 0; rerender(); };

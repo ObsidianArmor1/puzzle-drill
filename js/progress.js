@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS = {
   level: 18,           // block colors
 };
 let settings = { ...DEFAULT_SETTINGS, ...safeGet(SETTINGS_KEY, {}) };
+for (const k of ['rotLeft', 'rotRight', 'undo']) if (typeof settings[k] !== 'string' || !settings[k]) settings[k] = DEFAULT_SETTINGS[k];
 export const getSettings = () => settings;
 export function setSettings(patch) { settings = { ...settings, ...patch }; safeSet(SETTINGS_KEY, settings); }
 
