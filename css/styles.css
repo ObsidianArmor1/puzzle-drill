@@ -437,3 +437,24 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .mode-btn .badge { font-size: 11px; font-weight: 800; color: white; background: var(--puzzle); border-radius: 10px; padding: 1px 7px; }
 .mode-hint { min-height: 2.6em; color: #c9a6ff !important; opacity: 1 !important; }
 @media screen and (max-width: 700px) { .mode-row { grid-template-columns: repeat(2, 1fr); } }
+
+/* set panel alignment: title line, quiet action row, then stats and modes on the same 4-column grid */
+.set-panel .set-head { flex-direction: column; align-items: stretch; gap: 8px; }
+.set-panel .set-actions { width: 100%; gap: 6px !important; }
+.set-panel .set-actions .solid-button .button { padding-inline: 10px; box-shadow: none; background-color: rgba(255,255,255,0.08) !important; }
+.set-panel .set-actions .solid-button .button:hover { background-color: rgba(255,255,255,0.16) !important; opacity: 1; }
+.set-panel .set-actions .solid-button .label { font-size: 13px; font-weight: 700; margin-block: 4px; }
+.set-panel .set-actions #set-delete { margin-left: auto; }
+.set-panel .set-actions #set-delete .button { background-color: transparent !important; border: 1px solid rgba(241, 87, 87, 0.6); }
+.set-panel .set-actions #set-delete .label { color: var(--ui-red); }
+.set-panel .summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.set-panel .summary-chip { min-width: 0; }
+.set-panel > p { margin: 0; }
+@media screen and (max-width: 700px) { .set-panel .summary-row { grid-template-columns: repeat(2, 1fr); } }
+.set-panel .summary-row, .mode-row { width: 100%; box-sizing: border-box; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mode-btn { min-width: 0; }
+.mode-btn span:not(.badge) { overflow: hidden; text-overflow: ellipsis; }
+@media screen and (max-width: 700px) { .set-panel .summary-row, .mode-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.home > .set-panel, .home > .continue, .home > .intro { width: min(760px, 100%); }
+.mode-btn { gap: 6px; padding: 9px 6px; font-size: 14px; }
+.mode-btn img { width: 24px; height: 24px; }
