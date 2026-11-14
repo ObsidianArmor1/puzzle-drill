@@ -53,6 +53,7 @@ export const isMastered = (rec) => !!rec && rec.b >= MASTERED_BOX;
 
 export function record(id, correct, ms, wrongIndex) {
   const now = Date.now();
+  const isNew = !progress[id];
   const rec = progress[id] || { n: 0, c: 0, st: 0, b: 0, d: 0, l: 0 };
   const wasDue = isDue(rec, now);
   rec.n++;
@@ -75,7 +76,7 @@ export function record(id, correct, ms, wrongIndex) {
   }
   progress[id] = rec;
   scheduleSave();
-  bumpDaily(correct);
+  bumpDaily(correct, isNew, ms);
   return rec;
 }
 
@@ -100,29 +101,59 @@ export function summarize(puzzles, now = Date.now()) {
 }
 
 // ---------- daily stats ----------
-const today = () => new Date().toISOString().slice(0, 10);
-function bumpDaily(correct) {
+// Keyed by the player's local date. Per day: n answered, c correct, f first-time puzzles, t ms spent.
+const HISTORY_KEY = 'pd.history.v1';
+export const dayKey = (date = Date.now()) => {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const today = () => dayKey();
+function bumpDaily(correct, isNew, ms) {
   const d = safeGet(DAILY_KEY, {});
   const k = today();
   d[k] = d[k] || { n: 0, c: 0 };
   d[k].n++; if (correct) d[k].c++;
+  if (isNew) d[k].f = (d[k].f || 0) + 1;
+  if (ms) d[k].t = (d[k].t || 0) + Math.min(ms, 120000);
   safeSet(DAILY_KEY, d);
+}
+export const getDailyAll = () => safeGet(DAILY_KEY, {});
+function streakFrom(d, end = Date.now()) {
+  let streak = 0;
+  const day = new Date(end);
+  if (!d[dayKey(day)]) day.setDate(day.getDate() - 1);
+  while (d[dayKey(day)]) { streak++; day.setDate(day.getDate() - 1); }
+  return streak;
 }
 export function getDaily() {
   const d = safeGet(DAILY_KEY, {});
-  const t = d[today()] || { n: 0, c: 0 };
-  // consecutive days with at least one puzzle, ending today or yesterday
-  let streak = 0;
-  const day = new Date();
-  if (!d[today()]) day.setDate(day.getDate() - 1);
-  while (d[day.toISOString().slice(0, 10)]) { streak++; day.setDate(day.getDate() - 1); }
-  return { today: t, streak };
+  return { today: d[today()] || { n: 0, c: 0 }, streak: streakFrom(d) };
 }
+export function bestStreak() {
+  const days = Object.keys(safeGet(DAILY_KEY, {})).sort();
+  let best = 0, run = 0, prev = null;
+  for (const k of days) {
+    const cur = new Date(`${k}T12:00:00`);
+    run = prev && Math.round((cur - prev) / 86400000) === 1 ? run + 1 : 1;
+    best = Math.max(best, run); prev = cur;
+  }
+  return best;
+}
+
+// Daily snapshot of how many puzzles are mastered/seen in each set, for "mastered over time"
+export function snapshotSets(entries) {
+  const h = safeGet(HISTORY_KEY, {});
+  h[today()] = Object.fromEntries(entries.map((e) => [e.key, [e.mastered, e.seen, e.total]]));
+  const keys = Object.keys(h).sort();
+  for (const k of keys.slice(0, Math.max(0, keys.length - 400))) delete h[k];
+  safeSet(HISTORY_KEY, h);
+}
+export const getHistory = () => safeGet(HISTORY_KEY, {});
 
 // ---------- backup ----------
 export function exportProgress(extra = {}) {
   safeSet(BACKUP_KEY, Date.now());
-  return JSON.stringify({ kind: 'puzzle-drill-progress', version: 1, exportedAt: new Date().toISOString(), progress, settings, daily: safeGet(DAILY_KEY, {}), ...extra });
+  return JSON.stringify({ kind: 'puzzle-drill-progress', version: 1, exportedAt: new Date().toISOString(), progress, settings, daily: safeGet(DAILY_KEY, {}), history: safeGet(HISTORY_KEY, {}), ...extra });
 }
 export function importProgress(text, { merge = true } = {}) {
   const json = JSON.parse(text);
@@ -141,6 +172,11 @@ export function importProgress(text, { merge = true } = {}) {
     const d = safeGet(DAILY_KEY, {});
     for (const [k, v] of Object.entries(json.daily)) if (!d[k] || v.n > d[k].n) d[k] = v;
     safeSet(DAILY_KEY, d);
+  }
+  if (json.history && typeof json.history === 'object') {
+    const h = safeGet(HISTORY_KEY, {});
+    for (const [k, v] of Object.entries(json.history)) if (!h[k]) h[k] = v;
+    safeSet(HISTORY_KEY, h);
   }
   if (json.settings && typeof json.settings === 'object') setSettings(json.settings);
   safeSet(KEY, progress);

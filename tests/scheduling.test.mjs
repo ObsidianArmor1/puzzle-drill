@@ -24,6 +24,8 @@ const advance = (ms) => { now += ms; };
 
 beforeEach(() => {
   store.delete('pd.sets.v1');
+  store.delete('pd.daily.v1');
+  store.delete('pd.history.v1');
   P.resetProgress();
   P.setSettings({ ...P.DEFAULT_SETTINGS });
   now = Date.UTC(2026, 0, 1);
@@ -325,6 +327,30 @@ test('share links survive apps that re-encode them', () => {
   // older link format, double-encoded on the way (what actually happened)
   const legacy = 'n=4%E2%98%85%2520under%252050%2525%2520success&' + payload.split('&')[1];
   assert.equal(S.parseShare(legacy, data).name, '4★ under 50% success');
+});
+
+// ---------------- daily tracking ----------------
+test('daily stats count new puzzles and time, keyed by local date', () => {
+  P.record('a', true, 4000);
+  P.record('a', false, 6000);
+  P.record('b', true, 500000); // capped at 2 minutes
+  const day = P.getDailyAll()[P.dayKey(new Date(now))];
+  assert.deepEqual({ n: day.n, c: day.c, f: day.f, t: day.t }, { n: 3, c: 2, f: 2, t: 4000 + 6000 + 120000 });
+  const d = new Date(2026, 10, 14, 23, 30); // 11:30 pm local stays on the 14th
+  assert.equal(P.dayKey(d), '2026-11-14');
+});
+
+test('best streak counts consecutive local days', () => {
+  for (const day of [1, 2, 3, 5, 6]) { now = new Date(2026, 0, day, 12).getTime(); P.record('x' + day, true); }
+  assert.equal(P.bestStreak(), 3);
+});
+
+test('set snapshots keep one entry per day', () => {
+  P.snapshotSets([{ key: 'r4', mastered: 1, seen: 5, total: 10 }]);
+  P.snapshotSets([{ key: 'r4', mastered: 2, seen: 6, total: 10 }]);
+  const h = P.getHistory();
+  assert.equal(Object.keys(h).length, 1);
+  assert.deepEqual(Object.values(h)[0].r4, [2, 6, 10]);
 });
 
 process.on('exit', () => { Date.now = realNow; });

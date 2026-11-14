@@ -28,6 +28,13 @@ On a phone, tap to preview a placement, tap the preview to place it, and use the
 
 Progress is stored per puzzle ID in each player's browser (localStorage), so updating the puzzle data never touches anyone's progress. **Export progress** / **Import progress** on the home page back it up or move it to another device. Import merges: for each puzzle the more recently played copy wins, and settings come along too.
 
+## Getting around
+
+- **Home**: a first-visit intro, a **Continue** card (your last mode on the selected set, with reviews due and today's numbers), the Library, and the modes.
+- **Progress** (top right): totals, puzzles and accuracy per day for the last 30 days (also as a table), mastered over time for any set (tracked from your first visit on), and a per-set table.
+- **Settings** (top right): keybinds, timer, sound, session sizes, backup (export/import) and reset.
+- After a session, **Review your misses** shows each missed puzzle with the correct answer; click one to try it again.
+
 ## Updating the puzzles
 
 1. Run the scraper (`../tools/nestris-puzzle-scraper.js`) on nestris.org and click **Download all**.
