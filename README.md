@@ -20,7 +20,7 @@ Controls are the same as nestris.org: hover to move, click to place, Z/X to rota
 After a puzzle: Enter/Space for the next one, R to retry, Esc to exit. Keys can be changed in Settings.
 On a phone, tap to preview a placement, tap the preview to place it, and use the on-screen rotate buttons.
 
-Progress is stored per puzzle ID in each player's browser (localStorage), so updating the puzzle data never touches anyone's progress.
+Progress is stored per puzzle ID in each player's browser (localStorage), so updating the puzzle data never touches anyone's progress. **Export progress** / **Import progress** on the home page back it up or move it to another device. Import merges: for each puzzle the more recently played copy wins, and settings come along too.
 
 ## Updating the puzzles
 

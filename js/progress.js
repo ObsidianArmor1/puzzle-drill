@@ -120,11 +120,13 @@ export function exportProgress() {
 }
 export function importProgress(text, { merge = true } = {}) {
   const json = JSON.parse(text);
-  if (json.kind !== 'puzzle-drill-progress') throw new Error('Not a puzzle-drill progress file');
+  if (json.kind !== 'puzzle-drill-progress') throw new Error('Not a Puzzle Drill progress file');
+  let updated = 0;
   if (merge) {
     for (const [id, rec] of Object.entries(json.progress || {})) {
+      if (!rec || typeof rec !== 'object' || typeof rec.n !== 'number') continue;
       const mine = progress[id];
-      if (!mine || (rec.l || 0) > (mine.l || 0)) progress[id] = rec;
+      if (!mine || (rec.l || 0) > (mine.l || 0)) { progress[id] = rec; updated++; }
     }
   } else {
     progress = json.progress || {};
@@ -134,8 +136,9 @@ export function importProgress(text, { merge = true } = {}) {
     for (const [k, v] of Object.entries(json.daily)) if (!d[k] || v.n > d[k].n) d[k] = v;
     safeSet(DAILY_KEY, d);
   }
+  if (json.settings && typeof json.settings === 'object') setSettings(json.settings);
   safeSet(KEY, progress);
-  return Object.keys(json.progress || {}).length;
+  return { total: Object.keys(json.progress || {}).length, updated };
 }
 export function resetProgress(ids) {
   if (!ids) progress = {};

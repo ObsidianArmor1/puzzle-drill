@@ -3,6 +3,7 @@ import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES, orderNew } from './session.js';
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, isMastered, resetProgress, MASTERED_BOX,
+  exportProgress, importProgress,
 } from './progress.js';
 import { PUZZLE_THEME_TEXT } from './core.js';
 
@@ -213,7 +214,12 @@ function homeView(data) {
 
       ${rating ? `<div class="panel">
         <p>${list.length.toLocaleString()} puzzles in the ${rating}★ set; ${withDetails.toLocaleString()} have full engine details (top 5 moves and global stats), the rest show the best move only. Your progress is saved in this browser.</p>
-        <div class="row">${solidButton({ label: `Reset ${rating}★ progress`, color: '#B73C3C', id: 'reset-r' })}</div>
+        <div class="row">
+          ${solidButton({ label: 'Export progress', color: '#2F3033', id: 'exp-prog' })}
+          <label class="solid-button" style="cursor:pointer"><span class="button" style="background-color:#2F3033"><span class="label">Import progress</span></span><input type="file" id="imp-prog" accept=".json,application/json" hidden></label>
+          ${solidButton({ label: `Reset ${rating}★ progress`, color: '#B73C3C', id: 'reset-r' })}
+        </div>
+        <p>Export saves a backup file of all your progress and settings. Import merges one in: for each puzzle, whichever copy was played more recently wins, so an old backup never overwrites newer progress.</p>
       </div>` : ''}
     </div>`, 'scroll');
 
@@ -235,6 +241,25 @@ function homeView(data) {
   bind('#set-run', 'runSize', (v) => Math.max(5, Math.min(2000, Number(v) || 50)));
   root.querySelector('#set-runpick').addEventListener('change', (e) => { setSettings({ runPick: e.target.value }); homeView(data); });
 
+  root.querySelector('#exp-prog')?.addEventListener('click', () => {
+    const blob = new Blob([exportProgress()], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `puzzle-drill-progress-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+  root.querySelector('#imp-prog')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const { total, updated } = importProgress(await file.text());
+      toast(`Imported: ${updated.toLocaleString()} of ${total.toLocaleString()} puzzles updated`);
+      homeView(data);
+    } catch (err) {
+      toast('Import failed: ' + (err instanceof SyntaxError ? 'not a valid JSON file' : err.message));
+    }
+  });
   root.querySelector('#reset-r')?.addEventListener('click', () => {
     if (!confirm(`Erase all your progress on the ${rating}★ puzzles? This cannot be undone.`)) return;
     resetProgress(fullList.map((p) => p.id)); toast('Progress reset'); homeView(data);
