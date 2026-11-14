@@ -7,7 +7,7 @@ import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES, orderNew } from './session.js';
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, isMastered, resetProgress, MASTERED_BOX,
-  exportProgress, importProgress, storageStatus, lastBackup, progressCount,
+  exportProgress, importProgress, lastBackup, progressCount,
 } from './progress.js';
 import { PUZZLE_THEME_TEXT } from './core.js';
 
@@ -225,7 +225,7 @@ function homeView(data) {
           ${sel ? solidButton({ label: 'Reset progress in this set', color: '#B73C3C', id: 'reset-r' }) : ''}
         </div>
         <p id="backup-status" class="backup-status"></p>
-        <p>Export saves a backup file of your progress, sets and settings. Import merges one in: for each puzzle, whichever copy was played more recently wins, so an old backup never overwrites newer progress.</p>
+        <p>Your progress is saved in this browser. Export saves a backup file of your progress, sets and settings; Import merges one back in (for each puzzle, the more recently played copy wins).</p>
       </div>
     </div>`, 'scroll');
 
@@ -260,20 +260,15 @@ function homeView(data) {
   bind('#set-run', 'runSize', (v) => Math.max(5, Math.min(2000, Number(v) || 50)));
   root.querySelector('#set-runpick').addEventListener('change', (e) => { setSettings({ runPick: e.target.value }); homeView(data); });
 
-  // Backup reminder + whether the browser has agreed to keep storage permanently
+  // Backup reminder: progress only lives in this browser, so nudge after 14 days without an export
   const bs = root.querySelector('#backup-status');
-  if (bs) storageStatus().then((st) => {
+  if (bs) {
     const lb = lastBackup();
-    const n = progressCount();
     const days = lb ? Math.floor((Date.now() - lb) / 86400000) : null;
     const when = lb === null ? 'never' : days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
-    const stale = n >= 20 && (lb === null || days >= 14);
-    const kept = st === 'persisted'
-      ? 'This browser keeps your progress permanently.'
-      : 'This browser may clear your progress if storage runs low or you stay away for a while (Safari: 7 days), so keep a backup.';
-    bs.innerHTML = `<b>Last backup: ${when}.</b> ${n.toLocaleString()} puzzles have progress. ${kept}`;
-    bs.classList.toggle('warn', stale);
-  });
+    bs.textContent = `Last backup: ${when}`;
+    bs.classList.toggle('warn', progressCount() >= 20 && (lb === null || days >= 14));
+  }
 
   root.querySelector('#exp-prog')?.addEventListener('click', () => {
     const blob = new Blob([exportProgress({ sets: listSets() })], { type: 'application/json' });

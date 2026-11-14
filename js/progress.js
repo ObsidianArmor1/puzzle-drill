@@ -76,29 +76,10 @@ export function record(id, correct, ms, wrongIndex) {
   progress[id] = rec;
   scheduleSave();
   bumpDaily(correct);
-  requestPersistence();
   return rec;
 }
 
-// ---------- storage persistence ----------
-// Browsers may clear site storage under pressure, and Safari deletes it after 7 days without a visit.
-// Ask once per page load (after the first answer, so it happens during real use) to keep it permanently.
-let persistAsked = false;
-export function requestPersistence() {
-  if (persistAsked) return;
-  persistAsked = true;
-  try {
-    const st = globalThis.navigator?.storage;
-    if (st?.persisted && st?.persist) st.persisted().then((p) => (p ? null : st.persist())).catch(() => {});
-  } catch { /* unsupported */ }
-}
-export async function storageStatus() {
-  try {
-    const st = globalThis.navigator?.storage;
-    if (!st?.persisted) return 'unsupported';
-    return (await st.persisted()) ? 'persisted' : 'best-effort';
-  } catch { return 'unsupported'; }
-}
+// ---------- backup reminder ----------
 export const lastBackup = () => safeGet(BACKUP_KEY, null);
 export const progressCount = () => Object.keys(progress).length;
 
