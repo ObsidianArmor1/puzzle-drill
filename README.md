@@ -14,7 +14,11 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 - **Endless**: random puzzles from the set.
 - **Browse**: every puzzle as a board thumbnail with your record on it. Click one to play it.
 
-**Difficulty range** (per star rating): limit every mode, the progress numbers and Browse to a slice of the set ranked by global difficulty, i.e. how rarely players solve each puzzle on nestris.org. There are presets (hardest 10% / 25% / 50%, easiest 50%) or a custom range such as "from the 5% to the 20% hardest". Only puzzles with engine details have a difficulty score.
+**Sets & Library**: everything you drill is a set. The five star ratings come pre-installed as default sets, and you can add your own:
+- **From rules** (+ New set): pick star ratings, then *hardest N* / *hardest X%* / a difficulty range (ranked by how rarely players solve each puzzle on nestris.org), and optionally narrow by global success rate, theme (Stacking, Overhangs, Burns, Digging, Spires), your progress (new, not mastered, missed before…) and a size cap. A live preview shows how many puzzles match. The list is saved when you create the set; **Refresh** re-applies the rules later.
+- **By hand**: in Browse, choose a set under *Collect into* and click **+** on puzzles; or use *Add this puzzle to a set* on the solution screen while drilling.
+
+Progress belongs to the puzzle, so a new set immediately shows what you already know about its puzzles. The modes, home stats and Browse all work on the selected set.
 
 Controls are the same as nestris.org: hover to move, click to place, Z/X to rotate, Q to undo.
 After a puzzle: Enter/Space for the next one, R to retry, Esc to exit. Keys can be changed in Settings.

@@ -14,6 +14,7 @@ globalThis.window = { addEventListener() {} };
 const P = await import('../js/progress.js');
 const { createSession, orderNew } = await import('../js/session.js');
 const { difficultySlice } = await import('../js/data.js');
+const S = await import('../js/sets.js');
 
 const DAY = 86400000;
 let now = Date.UTC(2026, 0, 1);
@@ -22,6 +23,7 @@ Date.now = () => now;
 const advance = (ms) => { now += ms; };
 
 beforeEach(() => {
+  store.delete('pd.sets.v1');
   P.resetProgress();
   P.setSettings({ ...P.DEFAULT_SETTINGS });
   now = Date.UTC(2026, 0, 1);
@@ -182,6 +184,82 @@ test('difficulty slice leaves out unranked puzzles and says how many', () => {
   const s = difficultySlice(data, 4, { from: 0, to: 50 });
   assert.equal(s.puzzles.length, 45);
   assert.equal(s.unranked, 10);
+});
+
+// ---------------- sets ----------------
+// 3 ratings; puzzle i in rating r has successRate i/100, themes rotate, some 5-star puzzles unranked
+const mkData = () => {
+  const byRating = new Map(), byId = new Map();
+  const themes = ['CLEAN', 'OVERHANG', 'BURN', 'DIG', 'SPIRE'];
+  for (const r of [3, 4, 5]) {
+    const list = Array.from({ length: 100 }, (_, i) => {
+      const ranked = !(r === 5 && i >= 50);
+      const p = { id: `r${r}-${i}`, rating: r, theme: ranked ? themes[i % 5] : null, ...(ranked ? { successRate: (i + 1) / 101, attempts: 50, hardRank: i + 1 } : {}) };
+      byId.set(p.id, p); return p;
+    });
+    byRating.set(r, list);
+  }
+  return { byRating, byId };
+};
+
+test('rule: hardest N across the chosen ratings, hardest first', () => {
+  const data = mkData();
+  const got = S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'topN', n: 10 } });
+  assert.equal(got.length, 10);
+  assert.ok(got.every((p) => p.rating === 4));
+  assert.deepEqual(got.slice(0, 2).map((p) => p.id), ['r4-0', 'r4-1']);
+  const both = S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [3, 4], difficulty: { type: 'topN', n: 10 } });
+  assert.equal(new Set(both.map((p) => p.rating)).size, 2); // ties across ratings interleave
+});
+
+test('rule: hardest % and range are taken over ranked puzzles only', () => {
+  const data = mkData();
+  assert.equal(S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [5], difficulty: { type: 'topPct', pct: 10 } }).length, 5); // 50 ranked
+  const band = S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'range', from: 10, to: 20 } });
+  assert.equal(band.length, 10);
+  assert.equal(band[0].id, 'r4-10');
+  assert.equal(S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [5], difficulty: { type: 'any' } }).length, 100);
+});
+
+test('rule: success band, themes, progress status and limit narrow the list', () => {
+  const data = mkData();
+  const base = { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'any' } };
+  assert.equal(S.evaluateRule(data, { ...base, success: { min: 0, max: 20 } }).length, 20);
+  assert.ok(S.evaluateRule(data, { ...base, themes: ['BURN'] }).every((p) => p.theme === 'BURN'));
+  assert.equal(S.evaluateRule(data, { ...base, themes: ['BURN'] }).length, 20);
+  P.record('r4-0', true); P.record('r4-1', false);
+  assert.equal(S.evaluateRule(data, { ...base, status: 'new' }).length, 98);
+  assert.deepEqual(S.evaluateRule(data, { ...base, status: 'learning' }).map((p) => p.id), ['r4-1']);
+  assert.equal(S.evaluateRule(data, { ...base, status: 'notMastered' }).length, 100);
+  assert.deepEqual(S.evaluateRule(data, { ...base, limit: 3 }).map((p) => p.id), ['r4-0', 'r4-1', 'r4-2']);
+  assert.equal(S.evaluateRule(data, { ...base, limit: 3, limitOrder: 'random' }).length, 3);
+});
+
+test('custom sets: save, resolve, handpick and delete', () => {
+  const data = mkData();
+  const set = S.saveSet({ name: 'Mine', ids: ['r4-3', 'r3-7', 'gone'] });
+  const r = S.resolveSet(data, S.customKey(set.id));
+  assert.equal(r.puzzles.length, 2);
+  assert.equal(r.missing, 1);
+  assert.equal(r.rating, null); // mixed ratings
+  assert.equal(S.togglePuzzle(set.id, 'r5-1'), true);
+  assert.equal(S.togglePuzzle(set.id, 'r4-3'), false);
+  assert.deepEqual(S.getCustomSet(set.id).ids.sort(), ['gone', 'r3-7', 'r5-1']);
+  assert.equal(S.resolveSet(data, 'r4').puzzles.length, 100);
+  S.deleteSet(set.id);
+  assert.equal(S.resolveSet(data, S.customKey(set.id)), null);
+});
+
+test('importing sets keeps the more recently updated copy', () => {
+  const a = S.saveSet({ name: 'A', ids: ['x'] });
+  const backup = S.listSets();
+  advance(1000);
+  S.saveSet({ ...a, name: 'A renamed' });
+  assert.equal(S.importSets(backup), 0);
+  assert.equal(S.getCustomSet(a.id).name, 'A renamed');
+  S.deleteSet(a.id);
+  assert.equal(S.importSets(backup), 1);
+  assert.equal(S.getCustomSet(a.id).name, 'A');
 });
 
 process.on('exit', () => { Date.now = realNow; });

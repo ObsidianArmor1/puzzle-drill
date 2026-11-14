@@ -139,9 +139,9 @@ export function getDaily() {
 }
 
 // ---------- backup ----------
-export function exportProgress() {
+export function exportProgress(extra = {}) {
   safeSet(BACKUP_KEY, Date.now());
-  return JSON.stringify({ kind: 'puzzle-drill-progress', version: 1, exportedAt: new Date().toISOString(), progress, settings, daily: safeGet(DAILY_KEY, {}) });
+  return JSON.stringify({ kind: 'puzzle-drill-progress', version: 1, exportedAt: new Date().toISOString(), progress, settings, daily: safeGet(DAILY_KEY, {}), ...extra });
 }
 export function importProgress(text, { merge = true } = {}) {
   const json = JSON.parse(text);
@@ -163,7 +163,7 @@ export function importProgress(text, { merge = true } = {}) {
   }
   if (json.settings && typeof json.settings === 'object') setSettings(json.settings);
   safeSet(KEY, progress);
-  return { total: Object.keys(json.progress || {}).length, updated };
+  return { total: Object.keys(json.progress || {}).length, updated, json };
 }
 export function resetProgress(ids) {
   if (!ids) progress = {};

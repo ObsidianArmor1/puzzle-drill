@@ -1,4 +1,8 @@
-import { loadAll, decode, matchSubmission, difficultySlice } from './data.js';
+import { loadAll, decode, matchSubmission } from './data.js';
+import {
+  listSets, getCustomSet, saveSet, deleteSet, togglePuzzle, importSets, resolveSet, evaluateRule, describeRule,
+  ratingKey, customKey, DEFAULT_RULE, THEMES, STATUS_OPTIONS,
+} from './sets.js';
 import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES, orderNew } from './session.js';
 import {
@@ -82,12 +86,17 @@ function onKey(handler) {
 const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
 
 // ---------- routing ----------
+let migrated = false;
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   const data = await loadAll();
-  if (parts[0] === 'play') return playView(data, parts[1], Number(parts[2]));
+  if (!migrated) { migrated = true; migrateSettings(data); }
+  const legacy = (k) => (k && /^\d+$/.test(k) ? ratingKey(k) : k); // old links used bare ratings
+  if (parts[0] === 'play') return playView(data, parts[1], legacy(parts[2]));
   if (parts[0] === 'puzzle') return puzzleView(data, parts[1]);
-  if (parts[0] === 'browse') return browseView(data, Number(parts[1]) || getSettings().rating);
+  if (parts[0] === 'browse') return browseView(data, legacy(parts[1]) || currentSet(data)?.key);
+  if (parts[0] === 'sets' && parts[1] === 'new') return builderView(data, null);
+  if (parts[0] === 'sets' && parts[1] === 'edit') return builderView(data, parts[2]);
   return homeView(data);
 }
 window.addEventListener('hashchange', route);
@@ -97,49 +106,45 @@ window.addEventListener('hashchange', route);
 // =====================================================================================
 function homeView(data) {
   const s = getSettings();
-  const ratings = [1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length);
-  let rating = s.rating && data.byRating.get(s.rating)?.length ? s.rating : (ratings.includes(4) ? 4 : ratings[ratings.length - 1]);
   const daily = getDaily();
+  const sel = currentSet(data);
+  const lib = libraryKeys(data);
 
-  const ratingCards = [1, 2, 3, 4, 5, 6].filter((r) => r <= 5 || data.byRating.get(r)?.length).map((r) => {
-    const list = data.byRating.get(r) || [];
-    if (!list.length) return `<button class="rating-card empty" disabled>${stars(r, 80)}<div class="count">0</div><div class="small">no puzzles</div></button>`;
-    const sum = summarize(list);
-    const m = (sum.mastered / sum.total) * 100, seen = (sum.seen / sum.total) * 100;
-    return `<button class="rating-card${r === rating ? ' selected' : ''}" data-r="${r}">
-      ${stars(r, 80)}
-      <div class="count">${list.length.toLocaleString()}</div>
+  const card = (key) => {
+    const set = resolveSet(data, key);
+    if (!set) return '';
+    const sum = summarize(set.puzzles);
+    const m = sum.total ? (sum.mastered / sum.total) * 100 : 0, seen = sum.total ? (sum.seen / sum.total) * 100 : 0;
+    const head = set.kind === 'rating'
+      ? `${stars(set.rating, 80)}<span class="lib-tag">Default</span>`
+      : `<span class="lib-name">${esc(set.name)}</span>`;
+    return `<button class="rating-card lib-card${key === sel?.key ? ' selected' : ''}" data-key="${esc(key)}">
+      ${head}
+      <div class="count">${set.puzzles.length.toLocaleString()}</div>
       <div class="bar"><div class="m" style="width:${m}%"></div><div class="s" style="width:${Math.max(0, seen - m)}%"></div></div>
       <div class="small">${sum.mastered.toLocaleString()} mastered · ${sum.seen.toLocaleString()} seen</div>
     </button>`;
-  }).join('');
+  };
 
-  const fullList = rating ? data.byRating.get(rating) : [];
-  const range = rangeFor(rating);
-  const sl = rating ? difficultySlice(data, rating, range) : { puzzles: [], all: true, ranked: 0, unranked: 0 };
-  const list = sl.puzzles;
-  const sum = rating && list.length ? summarize(list) : null;
-  const mistakes = rating ? list.filter((p) => { const r = getRec(p.id); return r && (r.ok === false || r.c < r.n || r.b <= 1); }).length : 0;
-  const withDetails = rating ? fullList.filter((p) => p.hasDetails).length : 0;
-  const pct = (x) => (x === null || x === undefined ? '–' : `${Math.round(x * 100)}%`);
+  const list = sel ? sel.puzzles : [];
+  const sum = list.length ? summarize(list) : null;
+  const mistakes = list.filter((p) => { const r = getRec(p.id); return r && (r.ok === false || r.c < r.n || r.b <= 1); }).length;
   const newOrder = s.newOrder || 'hardest';
   const nextNew = newOrder === 'random' ? null : orderNew(list.filter((p) => !getRec(p.id)), newOrder)[0];
-  const learnNext = !rating ? '' : newOrder === 'random' ? ', in random order'
+  const learnNext = !sel ? '' : newOrder === 'random' ? ', in random order'
     : nextNew?.hardRank ? `, ${newOrder} first (next up: hardness rank <b>#${nextNew.hardRank.toLocaleString()}</b>)`
     : `, ${newOrder} first`;
-  const presets = [['All', 0, 100], ['Hardest 10%', 0, 10], ['Hardest 25%', 0, 25], ['Hardest 50%', 0, 50], ['Easiest 50%', 50, 100]];
-  const isPreset = (f, t) => Math.abs(range.from - f) < 1e-9 && Math.abs(range.to - t) < 1e-9;
-  const rangeText = sl.all ? `the whole ${rating}★ set`
-    : range.from <= 0 ? `the hardest ${fmtPct(range.to)}`
-    : range.to >= 100 ? `the easiest ${fmtPct(100 - range.from)}`
-    : `the ${fmtPct(range.from)}–${fmtPct(range.to)} hardest`;
-  const diffInfo = !rating ? '' : sl.all
-    ? `Drilling all ${fullList.length.toLocaleString()} ${rating}★ puzzles.${sl.ranked ? ` ${sl.ranked.toLocaleString()} of them have a difficulty score.` : ''}`
-    : `Drilling <b>${list.length.toLocaleString()}</b> of ${sl.ranked.toLocaleString()} ranked ${rating}★ puzzles: ${rangeText}, solved by <b>${pct(sl.hardest)}–${pct(sl.easiest)}</b> of players on nestris.org.`
-      + (sl.unranked ? ` ${sl.unranked.toLocaleString()} puzzles without a difficulty score are left out.` : '');
+  const rates = list.filter((p) => p.successRate !== undefined).map((p) => p.successRate);
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  const selInfo = !sel ? '' : [
+    sel.kind === 'custom' ? (sel.set.rule ? esc(describeRule(sel.set.rule, PUZZLE_THEME_TEXT)) : 'Handpicked') : `All ${sel.rating}★ puzzles`,
+    `${list.length.toLocaleString()} puzzles`,
+    rates.length ? `solved by ${pct(Math.min(...rates))}–${pct(Math.max(...rates))} of players` : '',
+    sel.missing ? `${sel.missing} no longer in the data` : '',
+  ].filter(Boolean).join(' · ');
 
   const modeCard = (mode, badge, extra = '') => `
-    <button class="option${rating ? '' : ' locked'}" data-mode="${mode}">
+    <button class="option${list.length ? '' : ' locked'}" data-mode="${mode}">
       <img class="prevent-select" src="assets/${MODES[mode].icon}" width="64">
       <div class="text">
         <h1 class="prevent-select">${MODES[mode].label}${badge !== undefined && badge !== '' ? `<span class="badge">${badge}</span>` : ''}</h1>
@@ -152,19 +157,24 @@ function homeView(data) {
       <header><h1 class="title">PUZZLES</h1></header>
       <p class="subtitle">Drill rated nestris.org puzzles until every one is automatic.</p>
 
-      ${ratings.length ? '' : `<div class="panel"><p><b>No puzzles loaded.</b> The puzzle data failed to load; try refreshing the page.</p></div>`}
+      ${data.byId.size ? '' : `<div class="panel"><p><b>No puzzles loaded.</b> The puzzle data failed to load; try refreshing the page.</p></div>`}
 
-      <h2 class="section">Puzzle set</h2>
-      <div class="rating-row">${ratingCards}</div>
+      <h2 class="section">Library</h2>
+      <div class="rating-row library">
+        ${lib.map(card).join('')}
+        <button class="rating-card lib-card new-set" id="new-set"><span class="plus">+</span><div class="small">New set</div></button>
+      </div>
 
-      ${rating ? `<h2 class="section">Difficulty</h2>
-      <div class="panel diff-panel">
-        <div class="row pills">${presets.map(([label, f, t]) => `<button class="pill${isPreset(f, t) ? ' active' : ''}" data-from="${f}" data-to="${t}"${!sl.ranked && (f > 0 || t < 100) ? ' disabled' : ''}>${label}</button>`).join('')}</div>
-        <div class="row">
-          <label>Custom: from the <input type="number" id="rng-from" min="0" max="99.9" step="any" value="${range.from}">% to the <input type="number" id="rng-to" min="0.1" max="100" step="any" value="${range.to}">% hardest</label>
-          ${solidButton({ label: 'Apply', color: '#2F3033', id: 'rng-apply' })}
-        </div>
-        <p>${diffInfo} Difficulty = how rarely players solve the puzzle on nestris.org. The modes and the numbers below use only this range.</p>
+      ${sel ? `<div class="panel set-panel">
+        <div class="row set-head"><h3>${sel.kind === 'rating' ? `${sel.rating}★ puzzles` : esc(sel.name)}</h3>
+          <div class="row set-actions">
+            ${solidButton({ label: 'Browse', color: '#2F3033', id: 'set-browse' })}
+            ${sel.kind === 'custom' ? solidButton({ label: sel.set.rule ? 'Edit' : 'Rename', color: '#2F3033', id: 'set-edit' }) : ''}
+            ${sel.kind === 'custom' && sel.set.rule ? solidButton({ label: 'Refresh', color: '#2F3033', id: 'set-refresh' }) : ''}
+            ${sel.kind === 'custom' ? solidButton({ label: 'Delete', color: '#B73C3C', id: 'set-delete' }) : ''}
+          </div></div>
+        <p>${selInfo}</p>
+        ${sel.kind === 'custom' && !list.length ? '<p>This set is empty. Open <b>Browse</b> on any set and use "Collect into" to handpick puzzles for it.</p>' : ''}
       </div>` : ''}
 
       ${sum ? `<div class="summary-row">
@@ -182,10 +192,6 @@ function homeView(data) {
         ${modeCard('run', s.runSize, ` Picks from: <b>${{ unmastered: 'not yet mastered', random: 'whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}</b>.`)}
         ${modeCard('mistakes', mistakes || '')}
         ${modeCard('endless', '')}
-        <button class="option${rating ? '' : ' locked'}" id="browse-card">
-          <img class="prevent-select" src="assets/img/button-icons/eye.svg" width="64" style="padding:0 0 0 0">
-          <div class="text"><h1>Browse</h1><p>Every puzzle in the set with your record on it. Click one to play it.</p></div>
-        </button>
       </div>
 
       <h2 class="section">Settings</h2>
@@ -201,35 +207,47 @@ function homeView(data) {
           <label>New per Learn session <input type="number" min="0" max="500" id="set-new" value="${s.newPerSession}"></label>
           <label>Perfect Run size <input type="number" min="5" max="2000" id="set-run" value="${s.runSize}"></label>
           <label>Run picks from
-            <select id="set-runpick" style="background:#151515;color:white;border:1px solid #555;border-radius:4px;padding:3px 5px;font-family:Montserrat">
+            <select id="set-runpick" class="dark-select">
               <option value="unmastered">not yet mastered</option><option value="random">whole set</option><option value="seen">seen puzzles</option>
             </select></label>
           <label>New Learn puzzles
-            <select id="set-neworder" style="background:#151515;color:white;border:1px solid #555;border-radius:4px;padding:3px 5px;font-family:Montserrat">
+            <select id="set-neworder" class="dark-select">
               <option value="hardest">hardest first</option><option value="easiest">easiest first</option><option value="random">random order</option>
             </select></label>
         </div>
-        <p>Spaced repetition: a correct answer on a due puzzle schedules the next review in 1, 3, 7, 16, then 35 days. A miss sends it back to the start. A puzzle counts as <b>mastered</b> once it reaches the 7-day review stage. Keys during a puzzle: rotate ${esc(keyName(s.rotLeft))}/${esc(keyName(s.rotRight))}, undo ${esc(keyName(s.undo))} (click a key button above, then press the key you want). After it: Enter/Space next, R retry, Esc exit.</p>
+        <p>Spaced repetition: a correct answer on a due puzzle schedules the next review in 1, 3, 7, 16, then 35 days. A miss sends it back to the start. A puzzle counts as <b>mastered</b> once it reaches the 7-day review stage. Progress belongs to the puzzle, so it shows up in every set that contains it. Keys during a puzzle: rotate ${esc(keyName(s.rotLeft))}/${esc(keyName(s.rotRight))}, undo ${esc(keyName(s.undo))} (click a key button above, then press the key you want). After it: Enter/Space next, R retry, Esc exit.</p>
       </div>
 
-      ${rating ? `<div class="panel">
-        <p>${list.length.toLocaleString()} puzzles in the ${rating}★ set; ${withDetails.toLocaleString()} have full engine details (top 5 moves and global stats), the rest show the best move only. Your progress is saved in this browser.</p>
+      <div class="panel">
         <div class="row">
           ${solidButton({ label: 'Export progress', color: '#2F3033', id: 'exp-prog' })}
           <label class="solid-button" style="cursor:pointer"><span class="button" style="background-color:#2F3033"><span class="label">Import progress</span></span><input type="file" id="imp-prog" accept=".json,application/json" hidden></label>
-          ${solidButton({ label: `Reset ${rating}★ progress`, color: '#B73C3C', id: 'reset-r' })}
+          ${sel ? solidButton({ label: 'Reset progress in this set', color: '#B73C3C', id: 'reset-r' }) : ''}
         </div>
         <p id="backup-status" class="backup-status"></p>
-        <p>Export saves a backup file of all your progress and settings. Import merges one in: for each puzzle, whichever copy was played more recently wins, so an old backup never overwrites newer progress.</p>
-      </div>` : ''}
+        <p>Export saves a backup file of your progress, sets and settings. Import merges one in: for each puzzle, whichever copy was played more recently wins, so an old backup never overwrites newer progress.</p>
+      </div>
     </div>`, 'scroll');
 
   root.querySelector('#set-runpick').value = s.runPick || 'unmastered';
   root.querySelector('#set-neworder').value = newOrder;
   root.querySelector('#set-neworder').addEventListener('change', (e) => { setSettings({ newOrder: e.target.value }); homeView(data); });
-  root.querySelectorAll('.rating-card[data-r]').forEach((b) => (b.onclick = () => { setSettings({ rating: Number(b.dataset.r) }); homeView(data); }));
-  root.querySelectorAll('.option[data-mode]').forEach((b) => (b.onclick = () => go(`#/play/${b.dataset.mode}/${rating}`)));
-  root.querySelector('#browse-card').onclick = () => go(`#/browse/${rating}`);
+  root.querySelectorAll('.lib-card[data-key]').forEach((b) => (b.onclick = () => { setSettings({ setKey: b.dataset.key }); homeView(data); }));
+  root.querySelector('#new-set').onclick = () => go('#/sets/new');
+  root.querySelectorAll('.option[data-mode]').forEach((b) => (b.onclick = () => go(`#/play/${b.dataset.mode}/${sel.key}`)));
+  root.querySelector('#set-browse')?.addEventListener('click', () => go(`#/browse/${sel.key}`));
+  root.querySelector('#set-edit')?.addEventListener('click', () => go(`#/sets/edit/${sel.set.id}`));
+  root.querySelector('#set-refresh')?.addEventListener('click', () => {
+    const ids = evaluateRule(data, sel.set.rule).map((p) => p.id);
+    const added = ids.filter((id) => !sel.set.ids.includes(id)).length, removed = sel.set.ids.filter((id) => !ids.includes(id)).length;
+    if (!added && !removed) return toast('Already up to date');
+    if (!confirm(`Re-apply the rules to "${sel.set.name}"? ${added} puzzle(s) would be added and ${removed} removed. Your progress on every puzzle is kept.`)) return;
+    saveSet({ ...sel.set, ids }); toast('Set refreshed'); homeView(data);
+  });
+  root.querySelector('#set-delete')?.addEventListener('click', () => {
+    if (!confirm(`Delete the set "${sel.set.name}"? Your progress on its puzzles is kept.`)) return;
+    deleteSet(sel.set.id); setSettings({ setKey: null }); toast('Set deleted'); homeView(data);
+  });
 
   const bind = (id, key, conv = (v) => v, ev = 'change') => {
     const el = root.querySelector(id);
@@ -258,7 +276,7 @@ function homeView(data) {
   });
 
   root.querySelector('#exp-prog')?.addEventListener('click', () => {
-    const blob = new Blob([exportProgress()], { type: 'application/json' });
+    const blob = new Blob([exportProgress({ sets: listSets() })], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `puzzle-drill-progress-${new Date().toISOString().slice(0, 10)}.json`;
@@ -270,33 +288,189 @@ function homeView(data) {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const { total, updated } = importProgress(await file.text());
-      toast(`Imported: ${updated.toLocaleString()} of ${total.toLocaleString()} puzzles updated`);
+      const { total, updated, json } = importProgress(await file.text());
+      const setsAdded = importSets(json.sets);
+      toast(`Imported: ${updated.toLocaleString()} of ${total.toLocaleString()} puzzles updated${setsAdded ? `, ${setsAdded} set(s)` : ''}`);
       homeView(data);
     } catch (err) {
       toast('Import failed: ' + (err instanceof SyntaxError ? 'not a valid JSON file' : err.message));
     }
   });
   root.querySelector('#reset-r')?.addEventListener('click', () => {
-    if (!confirm(`Erase all your progress on the ${rating}★ puzzles? This cannot be undone.`)) return;
-    resetProgress(fullList.map((p) => p.id)); toast('Progress reset'); homeView(data);
-  });
-
-  const setRange = (from, to) => {
-    const diff = { ...(getSettings().diff || {}) };
-    diff[rating] = { from, to };
-    setSettings({ diff });
-    homeView(data);
-  };
-  root.querySelectorAll('.pill[data-from]').forEach((b) => (b.onclick = () => setRange(Number(b.dataset.from), Number(b.dataset.to))));
-  root.querySelector('#rng-apply')?.addEventListener('click', () => {
-    let from = Number(root.querySelector('#rng-from').value), to = Number(root.querySelector('#rng-to').value);
-    if (!Number.isFinite(from) || !Number.isFinite(to)) return toast('Enter two percentages');
-    from = Math.max(0, Math.min(99.9, from)); to = Math.max(0.1, Math.min(100, to));
-    if (to <= from) return toast('"To" must be bigger than "from"');
-    setRange(from, to);
+    if (!confirm(`Erase your progress on all ${list.length.toLocaleString()} puzzles in "${sel.name}"? This also clears it everywhere else those puzzles appear, and cannot be undone.`)) return;
+    resetProgress(list.map((p) => p.id)); toast('Progress reset'); homeView(data);
   });
 }
+
+// Library order: default star sets, then custom sets oldest first
+function libraryKeys(data) {
+  const builtIn = [1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length).map(ratingKey);
+  return [...builtIn, ...listSets().map((x) => customKey(x.id))];
+}
+function currentSet(data) {
+  const s = getSettings();
+  return resolveSet(data, s.setKey) || resolveSet(data, ratingKey(s.rating || 4)) || resolveSet(data, libraryKeys(data)[0]);
+}
+
+// One-time migration from the old per-rating Difficulty ranges to custom sets
+function migrateSettings(data) {
+  const s = getSettings();
+  if (s.diff && typeof s.diff === 'object') {
+    for (const [r, range] of Object.entries(s.diff)) {
+      if (!range || (range.from <= 0 && range.to >= 100)) continue;
+      const rule = { ...DEFAULT_RULE, ratings: [Number(r)], difficulty: { type: 'range', from: range.from, to: range.to } };
+      const set = saveSet({ name: describeRule(rule, PUZZLE_THEME_TEXT), ids: evaluateRule(data, rule).map((p) => p.id), rule });
+      if (Number(r) === (s.rating || 4) && !s.setKey) setSettings({ setKey: customKey(set.id) });
+    }
+    setSettings({ diff: null });
+  }
+  if (!getSettings().setKey && s.rating) setSettings({ setKey: ratingKey(s.rating) });
+}
+
+// =====================================================================================
+// SET BUILDER
+// =====================================================================================
+function builderView(data, editId) {
+  const existing = editId ? getCustomSet(editId) : null;
+  if (editId && !existing) return go('#/');
+  const handpicked = existing && !existing.rule;
+  let rule = structuredClone(existing?.rule || DEFAULT_RULE);
+  let name = existing?.name || '';
+  let nameTouched = !!existing;
+  const ratings = [1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length);
+
+  const root = setView(`
+    ${outlineButton('Exit', 'leave-fullscreen-button', 'exit')}
+    <div class="home builder">
+      <header><h1 class="title">${existing ? 'EDIT SET' : 'NEW SET'}</h1></header>
+      <div class="panel">
+        <label class="wide">Name <input type="text" id="b-name" class="name-input" maxlength="60" placeholder="e.g. Hardest 100 4-star"></label>
+      </div>
+      ${handpicked ? `<div class="panel"><p>This set was handpicked (${existing.ids.length.toLocaleString()} puzzles). Add or remove puzzles from Browse with "Collect into".</p></div>` : `
+      <div class="panel">
+        <h4>1 · Star ratings</h4>
+        <div class="row pills" id="b-ratings">${ratings.map((r) => `<button class="pill" data-r="${r}">${r}★ <small>${data.byRating.get(r).length.toLocaleString()}</small></button>`).join('')}</div>
+      </div>
+      <div class="panel">
+        <h4>2 · Difficulty</h4>
+        <div class="row pills" id="b-dtype">
+          <button class="pill" data-t="any">Any</button><button class="pill" data-t="topN">Hardest N</button>
+          <button class="pill" data-t="topPct">Hardest %</button><button class="pill" data-t="range">Range</button>
+        </div>
+        <div class="row" id="b-dparams"></div>
+        <p>Ranked by how rarely players solve each puzzle on nestris.org, across the star ratings chosen above. Only puzzles with engine details have a rank.</p>
+      </div>
+      <div class="panel">
+        <h4>3 · Narrow it down <small>(optional)</small></h4>
+        <div class="row"><label>Global success rate from <input type="number" id="b-smin" min="0" max="100" step="any">% to <input type="number" id="b-smax" min="0" max="100" step="any">%</label></div>
+        <div class="row pills" id="b-themes">${THEMES.map((t) => `<button class="pill" data-theme="${t}">${esc(PUZZLE_THEME_TEXT[t] || t)}</button>`).join('')}</div>
+        <div class="row"><label>Your progress <select id="b-status" class="dark-select">${STATUS_OPTIONS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label></div>
+        <div class="row"><label>At most <input type="number" id="b-limit" min="1" step="1" placeholder="no limit"> puzzles, picking <select id="b-lorder" class="dark-select"><option value="hardest">the hardest</option><option value="random">at random</option></select></label></div>
+      </div>`}
+      <div class="panel preview" id="b-preview"></div>
+      <div class="row builder-buttons">
+        ${solidButton({ label: existing ? 'Save set' : 'Create set', color: '#54A165', id: 'b-save' })}
+        ${!existing ? solidButton({ label: 'Start an empty set to handpick', color: '#2F3033', id: 'b-empty' }) : ''}
+      </div>
+    </div>`, 'scroll');
+
+  const $ = (q) => root.querySelector(q);
+  const nameEl = $('#b-name');
+  nameEl.value = name;
+  nameEl.oninput = () => { name = nameEl.value; nameTouched = true; };
+  $('#exit').onclick = () => go('#/');
+
+  let result = handpicked ? existing.ids.map((id) => data.byId.get(id)).filter(Boolean) : [];
+  const refresh = () => {
+    if (!handpicked) {
+      $('#b-ratings').querySelectorAll('.pill').forEach((b) => b.classList.toggle('active', rule.ratings.includes(Number(b.dataset.r))));
+      $('#b-dtype').querySelectorAll('.pill').forEach((b) => b.classList.toggle('active', b.dataset.t === rule.difficulty.type));
+      $('#b-themes').querySelectorAll('.pill').forEach((b) => b.classList.toggle('active', !rule.themes || rule.themes.includes(b.dataset.theme)));
+      result = evaluateRule(data, rule);
+      if (!nameTouched) { name = describeRule(rule, PUZZLE_THEME_TEXT); nameEl.value = name; }
+    }
+    const sum = summarize(result);
+    const rates = result.filter((p) => p.successRate !== undefined).map((p) => p.successRate);
+    const pc = (x) => `${Math.round(x * 100)}%`;
+    $('#b-preview').innerHTML = `<p class="big-count"><b>${result.length.toLocaleString()}</b> puzzles</p>
+      <p>${rates.length ? `Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org. ` : ''}You've seen ${sum.seen.toLocaleString()} of them and mastered ${sum.mastered.toLocaleString()}; that progress carries over.</p>
+      ${!handpicked ? '<p>The puzzle list is saved when you create the set. Use <b>Refresh</b> later to re-apply these rules.</p>' : ''}`;
+  };
+
+  const renderDParams = () => {
+    const d = rule.difficulty;
+    const box = $('#b-dparams');
+    if (d.type === 'topN') box.innerHTML = `<label>The <input type="number" id="b-n" min="1" step="1" value="${d.n ?? 100}"> hardest puzzles</label>`;
+    else if (d.type === 'topPct') box.innerHTML = `<label>The hardest <input type="number" id="b-pct" min="0.1" max="100" step="any" value="${d.pct ?? 10}">%</label>`;
+    else if (d.type === 'range') box.innerHTML = `<label>From the <input type="number" id="b-from" min="0" max="100" step="any" value="${d.from ?? 0}">% to the <input type="number" id="b-to" min="0" max="100" step="any" value="${d.to ?? 10}">% hardest</label>`;
+    else box.innerHTML = '';
+    box.querySelectorAll('input').forEach((inp) => (inp.oninput = () => {
+      const v = Number(inp.value);
+      if (!Number.isFinite(v)) return;
+      if (inp.id === 'b-n') d.n = Math.max(1, Math.floor(v));
+      if (inp.id === 'b-pct') d.pct = Math.max(0.1, Math.min(100, v));
+      if (inp.id === 'b-from') d.from = Math.max(0, Math.min(100, v));
+      if (inp.id === 'b-to') d.to = Math.max(0, Math.min(100, v));
+      refresh();
+    }));
+  };
+
+  if (!handpicked) {
+    $('#b-ratings').querySelectorAll('.pill').forEach((b) => (b.onclick = () => {
+      const r = Number(b.dataset.r);
+      rule.ratings = rule.ratings.includes(r) ? rule.ratings.filter((x) => x !== r) : [...rule.ratings, r].sort();
+      refresh();
+    }));
+    $('#b-dtype').querySelectorAll('.pill').forEach((b) => (b.onclick = () => {
+      const t = b.dataset.t;
+      rule.difficulty = { type: t, n: rule.difficulty.n ?? 100, pct: rule.difficulty.pct ?? 10, from: rule.difficulty.from ?? 0, to: rule.difficulty.to ?? 10 };
+      renderDParams(); refresh();
+    }));
+    $('#b-themes').querySelectorAll('.pill').forEach((b) => (b.onclick = () => {
+      const t = b.dataset.theme;
+      // From "any theme", a click picks just that theme; after that, clicks toggle themes in and out
+      let next = !rule.themes ? [t] : rule.themes.includes(t) ? rule.themes.filter((x) => x !== t) : [...rule.themes, t];
+      if (!next.length || next.length === THEMES.length) next = null;
+      rule.themes = next;
+      refresh();
+    }));
+    const sv = (x, dflt) => (x === undefined || x === null ? dflt : x);
+    $('#b-smin').value = sv(rule.success?.min, 0); $('#b-smax').value = sv(rule.success?.max, 100);
+    const onSuccess = () => {
+      const min = Number($('#b-smin').value), max = Number($('#b-smax').value);
+      rule.success = Number.isFinite(min) && Number.isFinite(max) ? { min: Math.max(0, min), max: Math.min(100, max) } : null;
+      refresh();
+    };
+    $('#b-smin').oninput = onSuccess; $('#b-smax').oninput = onSuccess;
+    $('#b-status').value = rule.status || 'any';
+    $('#b-status').onchange = (e) => { rule.status = e.target.value; refresh(); };
+    $('#b-limit').value = rule.limit || '';
+    $('#b-limit').oninput = (e) => { const v = Math.floor(Number(e.target.value)); rule.limit = v > 0 ? v : null; refresh(); };
+    $('#b-lorder').value = rule.limitOrder || 'hardest';
+    $('#b-lorder').onchange = (e) => { rule.limitOrder = e.target.value; refresh(); };
+    renderDParams();
+  }
+  refresh();
+
+  $('#b-save').onclick = () => {
+    const finalName = (nameEl.value || '').trim() || (handpicked ? 'My set' : describeRule(rule, PUZZLE_THEME_TEXT));
+    if (!handpicked && !result.length && !confirm('No puzzles match these rules. Create an empty set anyway?')) return;
+    const set = saveSet(handpicked ? { ...existing, name: finalName } : { ...(existing || {}), name: finalName, ids: result.map((p) => p.id), rule });
+    setSettings({ setKey: customKey(set.id) });
+    toast(existing ? 'Set saved' : `Created "${finalName}"`);
+    go('#/');
+  };
+  $('#b-empty')?.addEventListener('click', () => {
+    const finalName = nameTouched && nameEl.value.trim() ? nameEl.value.trim() : 'My set';
+    const set = saveSet({ name: finalName, ids: [] });
+    setSettings({ setKey: customKey(set.id) });
+    browseState.collect = set.id;
+    toast(`Created "${finalName}". Pick puzzles with the + on each tile.`);
+    go(`#/browse/${ratingKey(currentRatingGuess(data))}`);
+  });
+  onKey((e) => { if (e.key === 'Escape') go('#/'); });
+}
+const currentRatingGuess = (data) => (data.byRating.get(4)?.length ? 4 : [...data.byRating.keys()][0]);
 
 // ---------- keybinds ----------
 const KEY_NAMES = {
@@ -343,20 +517,14 @@ function captureKey(btn, done) {
   activeCapture = cancel;
 }
 
-// Difficulty range chosen for a rating (percent of the ranked list, hardest first)
-function rangeFor(rating) {
-  const r = getSettings().diff?.[rating];
-  return r && Number.isFinite(r.from) && Number.isFinite(r.to) ? r : { from: 0, to: 100 };
-}
-const fmtPct = (x) => `${Math.round(x * 10) / 10}%`;
-
 // =====================================================================================
 // PLAY
 // =====================================================================================
-function playView(data, mode, rating, opts = {}) {
-  const puzzles = difficultySlice(data, rating, rangeFor(rating)).puzzles;
-  if (!MODES[mode] || !puzzles?.length) return go('#/');
-  const session = createSession(mode, rating, puzzles, { pick: getSettings().runPick || 'unmastered', ...opts });
+function playView(data, mode, key, opts = {}) {
+  const set = resolveSet(data, key);
+  if (!MODES[mode] || !set?.puzzles.length) return go('#/');
+  const session = createSession(mode, set.rating, set.puzzles, { pick: getSettings().runPick || 'unmastered', ...opts });
+  session.set = set;
   runSession(data, session);
 }
 
@@ -369,7 +537,7 @@ function puzzleView(data, id) {
     root.querySelector('#exit').onclick = root.querySelector('#home').onclick = () => go('#/');
     return;
   }
-  runSession(data, createSession('single', p.rating, null, { puzzle: p }), { exitTo: '#/browse/' + p.rating });
+  runSession(data, createSession('single', p.rating, null, { puzzle: p }), { exitTo: '#/browse/' + (browseState.key || ratingKey(p.rating)) });
 }
 
 function runSession(data, session, { exitTo = '#/' } = {}) {
@@ -492,6 +660,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
             </div>
             <div class="puzzle-details-bottom">
               ${solved ? `
+                <select id="add-to-set" class="dark-select add-to-set"></select>
                 <div class="two-button-container">
                   ${solidButton({ label: 'Share', icon: 'assets/img/button-icons/link.svg', color: '#2F3033', stretch: true, id: 'share' })}
                   ${solidButton({ label: 'Retry', icon: 'assets/img/button-icons/retry.svg', color: '#2F3033', stretch: true, id: 'retry' })}
@@ -562,6 +731,24 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         row.onmouseleave = () => show(undefined);
       });
       root.querySelector('#retry').onclick = retry;
+      const ats = root.querySelector('#add-to-set');
+      const fillSets = () => {
+        const cs = listSets();
+        ats.innerHTML = `<option value="">＋ Add this puzzle to a set…</option>` +
+          cs.map((c) => `<option value="${esc(c.id)}">${c.ids.includes(p.id) ? '✓ ' : ''}${esc(c.name)}</option>`).join('') +
+          `<option value="__new">New set…</option>`;
+      };
+      fillSets();
+      ats.onchange = () => {
+        let id = ats.value;
+        if (id === '__new') {
+          const name = (prompt('Name for the new set:', 'Tricky ones') || '').trim();
+          if (!name) { fillSets(); return; }
+          id = saveSet({ name, ids: [] }).id;
+        }
+        if (id) { const added = togglePuzzle(id, p.id); toast(`${added ? 'Added to' : 'Removed from'} "${getCustomSet(id).name}"`); }
+        fillSets();
+      };
       root.querySelector('#share').onclick = () => {
         const url = `${location.origin}${location.pathname}#/puzzle/${encodeURIComponent(p.id)}`;
         navigator.clipboard?.writeText(url).then(() => toast('Puzzle link copied to clipboard!'), () => toast(url));
@@ -585,7 +772,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       ${outlineButton('Exit', 'leave-fullscreen-button', 'exit')}
       <div class="content" style="justify-content:center">
         <div class="end-card">
-          ${stars(session.rating, 90)}
+          ${session.set?.kind === 'custom' ? `<p class="set-title">${esc(session.set.name)}</p>` : stars(session.rating, 90)}
           <h1>${session.mode === 'run' ? (perfect ? 'Perfect run!' : 'Run complete') : session.done ? 'Session complete' : 'Nothing to do here'}</h1>
           ${session.done ? `<p class="big">${session.correct}/${session.done}</p>
           <div class="summary-row">
@@ -599,10 +786,12 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         </div>
       </div>`, perfect ? 'correct' : '');
     root.querySelector('#exit').onclick = root.querySelector('#home').onclick = () => go('#/');
-    root.querySelector('#again')?.addEventListener('click', () => playView(data, session.mode, session.rating));
+    root.querySelector('#again')?.addEventListener('click', () => playView(data, session.mode, session.set?.key || ratingKey(session.rating)));
     root.querySelector('#rerun')?.addEventListener('click', () => {
-      const s2 = createSession('run', session.rating, data.byRating.get(session.rating), { ids: misses });
+      const pool = misses.map((id) => data.byId.get(id)).filter(Boolean);
+      const s2 = createSession('run', session.rating, pool, { ids: misses });
       s2.isRerun = true;
+      s2.set = session.set;
       runSession(data, s2);
     });
     onKey((e) => { if (e.key === 'Enter') root.querySelector('#rerun, #again, #home')?.click(); else if (e.key === 'Escape') go('#/'); });
@@ -617,9 +806,15 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
 const PAGE = 48;
 let browseState = { filter: 'all', sort: 'id', page: 0, q: '' };
 
-function browseView(data, rating) {
-  const sl = difficultySlice(data, rating, browseState.useRange === false ? null : rangeFor(rating));
-  const all = sl.puzzles;
+function browseView(data, key) {
+  const set = resolveSet(data, key);
+  if (!set) return go('#/');
+  browseState.key = set.key;
+  const all = set.puzzles;
+  const customs = listSets();
+  if (browseState.collect && !customs.some((c) => c.id === browseState.collect)) browseState.collect = null;
+  const target = browseState.collect ? getCustomSet(browseState.collect) : null;
+  const inTarget = new Set(target?.ids || []);
   const now = Date.now();
   // mastered: reached the 7-day stage · progress: answered correctly, not mastered yet
   // learning: missed last time · new: never seen
@@ -656,12 +851,15 @@ function browseView(data, rating) {
     <div class="browse">
       <header><h1 class="title">BROWSE</h1></header>
       <div class="controls">
-        <select id="b-rating">${[1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length).map((r) => `<option value="${r}"${r === rating ? ' selected' : ''}>${r}★ (${data.byRating.get(r).length.toLocaleString()})</option>`).join('')}</select>
+        <select id="b-set">${libraryKeys(data).map((k) => { const x = resolveSet(data, k); return x ? `<option value="${esc(k)}"${k === set.key ? ' selected' : ''}>${esc(x.kind === 'rating' ? `${x.rating}★ (default)` : x.name)} (${x.puzzles.length.toLocaleString()})</option>` : ''; }).join('')}</select>
         <select id="b-filter">${[['all', 'All'], ['mastered', 'Mastered'], ['progress', 'In progress'], ['learning', 'Learning (missed last time)'], ['new', 'New (never seen)'], ['due', 'Due for review'], ['missed', 'Ever missed']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l} (${counts[v].toLocaleString()})</option>`).join('')}</select>
         <select id="b-sort">${[['id', 'Sort: ID'], ['accuracy', 'Sort: your accuracy'], ['recent', 'Sort: recently played'], ['global', 'Sort: hardest globally']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input id="b-q" placeholder="Search ID or theme" value="${esc(browseState.q)}" size="16">
-        ${sl.all && browseState.useRange !== false ? '' : `<select id="b-range"><option value="range"${browseState.useRange === false ? '' : ' selected'}>Your difficulty range</option><option value="all"${browseState.useRange === false ? ' selected' : ''}>Whole ${rating}★ set</option></select>`}
         <span>${list.length.toLocaleString()} puzzles</span>
+      </div>
+      <div class="controls collect">
+        <label>Collect into <select id="b-collect"><option value="">— off —</option>${customs.map((c) => `<option value="${esc(c.id)}"${c.id === browseState.collect ? ' selected' : ''}>${esc(c.name)} (${c.ids.length.toLocaleString()})</option>`).join('')}<option value="__new">+ New empty set…</option></select></label>
+        ${target ? `<span>Click <b>+</b> on a puzzle to add it to "${esc(target.name)}", <b>✓</b> to remove it.${list.length ? ` ${solidButton({ label: `Add all ${list.length.toLocaleString()} shown`, color: '#2F3033', id: 'b-addall' })}` : ''}</span>` : '<span class="muted">Pick a custom set to handpick puzzles into it.</span>'}
       </div>
       <div class="legend">${[['mastered', 'Mastered', 'reached the 7-day review stage'], ['progress', 'In progress', 'answered correctly, not mastered yet'], ['learning', 'Learning', 'missed last time'], ['new', 'New', 'never seen']].map(([k, label, tip]) => `<button class="legend-item${f === k ? ' active' : ''}" data-filter="${k}" title="${tip}"><span class="st-badge st-${k}">${label}</span><b>${counts[k].toLocaleString()}</b></button>`).join('')}
         ${f !== 'all' ? '<button class="legend-item" data-filter="all">Show all</button>' : ''}</div>
@@ -683,20 +881,43 @@ function browseView(data, rating) {
     const label = { mastered: 'Mastered', progress: 'In progress', learning: 'Learning', new: 'New' }[st];
     const review = !r ? '' : r.b <= 1 ? 'retry now' : r.d <= now ? 'review due' : `review in ${fmtInterval(r.d - now)}`;
     tile.className = `tile st-${st}`;
-    tile.innerHTML = `<div class="b"></div>
+    tile.innerHTML = `${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
       <div class="meta"><span class="st-badge st-${st}">${label}</span><span>${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
       <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${p.attempts ? Math.round((p.solves / p.attempts) * 100) + '% global' : ''}</span></div>`;
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({ board: d.board, level: s.level });
+    tile.querySelector('.collect-btn')?.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const added = togglePuzzle(target.id, p.id);
+      e.currentTarget.classList.toggle('in', added);
+      e.currentTarget.textContent = added ? '✓' : '+';
+      toast(`${added ? 'Added to' : 'Removed from'} "${target.name}"`);
+      if (set.key === customKey(target.id) && !added) rerender();
+    });
     grid.appendChild(tile);
   }
 
   root.querySelector('#exit').onclick = () => go('#/');
-  const rerender = () => browseView(data, rating);
-  root.querySelector('#b-rating').onchange = (e) => { browseState.page = 0; go(`#/browse/${e.target.value}`); };
+  const rerender = () => browseView(data, set.key);
+  root.querySelector('#b-set').onchange = (e) => { browseState.page = 0; go(`#/browse/${e.target.value}`); };
+  root.querySelector('#b-collect').onchange = (e) => {
+    if (e.target.value === '__new') {
+      const name = (prompt('Name for the new set:', 'My set') || '').trim();
+      if (!name) { e.target.value = browseState.collect || ''; return; }
+      browseState.collect = saveSet({ name, ids: [] }).id;
+      toast(`Created "${name}"`);
+    } else browseState.collect = e.target.value || null;
+    rerender();
+  };
+  root.querySelector('#b-addall')?.addEventListener('click', () => {
+    const fresh = list.map((x) => x.p.id).filter((id) => !inTarget.has(id));
+    if (!fresh.length) return toast('All shown puzzles are already in the set');
+    if (!confirm(`Add ${fresh.length.toLocaleString()} puzzle(s) to "${target.name}"?`)) return;
+    saveSet({ ...target, ids: [...target.ids, ...fresh] });
+    toast(`Added ${fresh.length.toLocaleString()} puzzles`); rerender();
+  });
   root.querySelectorAll('.legend-item[data-filter]').forEach((b) => (b.onclick = () => { browseState.filter = b.dataset.filter; browseState.page = 0; rerender(); }));
   root.querySelector('#b-filter').onchange = (e) => { browseState.filter = e.target.value; browseState.page = 0; rerender(); };
-  root.querySelector('#b-range')?.addEventListener('change', (e) => { browseState.useRange = e.target.value === 'range'; browseState.page = 0; rerender(); });
   root.querySelector('#b-sort').onchange = (e) => { browseState.sort = e.target.value; browseState.page = 0; rerender(); };
   let qTimer;
   root.querySelector('#b-q').oninput = (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { browseState.q = e.target.value.trim(); browseState.page = 0; rerender(); const q = document.querySelector('#b-q'); q?.focus(); q?.setSelectionRange(q.value.length, q.value.length); }, 250); };
