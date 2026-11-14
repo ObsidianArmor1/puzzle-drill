@@ -8,6 +8,7 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 - **Learn**: spaced repetition. Puzzles that are due come first, missed puzzles are asked again a few puzzles later, then up to N new puzzles are added (N is set in Settings).
   Correct answers on due puzzles schedule the next review in 1 → 3 → 7 → 16 → 35 days. A miss resets the puzzle.
   A puzzle counts as *mastered* once it reaches the 7-day stage.
+  New puzzles come **hardest first** by default, so Learn works its way down the set by difficulty (changeable to easiest first or random in Settings).
 - **Perfect Run**: N puzzles in a row, aiming for zero mistakes. Afterwards, *Re-run misses* until the set is clean.
 - **Mistakes**: only puzzles you have missed, worst first.
 - **Endless**: random puzzles from the set.

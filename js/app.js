@@ -1,6 +1,6 @@
 import { loadAll, decode, matchSubmission, difficultySlice } from './data.js';
 import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
-import { createSession, MODES } from './session.js';
+import { createSession, MODES, orderNew } from './session.js';
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, isMastered, resetProgress, MASTERED_BOX,
 } from './progress.js';
@@ -121,6 +121,11 @@ function homeView(data) {
   const mistakes = rating ? list.filter((p) => { const r = getRec(p.id); return r && (r.ok === false || r.c < r.n || r.b <= 1); }).length : 0;
   const withDetails = rating ? fullList.filter((p) => p.hasDetails).length : 0;
   const pct = (x) => (x === null || x === undefined ? '–' : `${Math.round(x * 100)}%`);
+  const newOrder = s.newOrder || 'hardest';
+  const nextNew = newOrder === 'random' ? null : orderNew(list.filter((p) => !getRec(p.id)), newOrder)[0];
+  const learnNext = !rating ? '' : newOrder === 'random' ? ', in random order'
+    : nextNew?.hardRank ? `, ${newOrder} first (next up: hardness rank <b>#${nextNew.hardRank.toLocaleString()}</b>)`
+    : `, ${newOrder} first`;
   const presets = [['All', 0, 100], ['Hardest 10%', 0, 10], ['Hardest 25%', 0, 25], ['Hardest 50%', 0, 50], ['Easiest 50%', 50, 100]];
   const isPreset = (f, t) => Math.abs(range.from - f) < 1e-9 && Math.abs(range.to - t) < 1e-9;
   const rangeText = sl.all ? `the whole ${rating}★ set`
@@ -172,7 +177,7 @@ function homeView(data) {
 
       <h2 class="section">Modes</h2>
       <div class="options">
-        ${modeCard('learn', sum ? (sum.due + sum.learning || '') : '', sum ? ` <b>${sum.due + sum.learning}</b> due, up to <b>${s.newPerSession}</b> new.` : '')}
+        ${modeCard('learn', sum ? (sum.due + sum.learning || '') : '', sum ? ` <b>${sum.due + sum.learning}</b> due, up to <b>${s.newPerSession}</b> new${learnNext}.` : '')}
         ${modeCard('run', s.runSize, ` Picks from: <b>${{ unmastered: 'not yet mastered', random: 'whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}</b>.`)}
         ${modeCard('mistakes', mistakes || '')}
         ${modeCard('endless', '')}
@@ -197,6 +202,10 @@ function homeView(data) {
             <select id="set-runpick" style="background:#151515;color:white;border:1px solid #555;border-radius:4px;padding:3px 5px;font-family:Montserrat">
               <option value="unmastered">not yet mastered</option><option value="random">whole set</option><option value="seen">seen puzzles</option>
             </select></label>
+          <label>New Learn puzzles
+            <select id="set-neworder" style="background:#151515;color:white;border:1px solid #555;border-radius:4px;padding:3px 5px;font-family:Montserrat">
+              <option value="hardest">hardest first</option><option value="easiest">easiest first</option><option value="random">random order</option>
+            </select></label>
         </div>
         <p>Spaced repetition: a correct answer on a due puzzle schedules the next review in 1, 3, 7, 16, then 35 days. A miss sends it back to the start. A puzzle counts as <b>mastered</b> once it reaches the 7-day review stage. Keys during a puzzle: rotate ${esc(s.rotLeft.toUpperCase())}/${esc(s.rotRight.toUpperCase())}, undo ${esc(s.undo.toUpperCase())}. After it: Enter/Space next, R retry, Esc exit.</p>
       </div>
@@ -208,6 +217,8 @@ function homeView(data) {
     </div>`, 'scroll');
 
   root.querySelector('#set-runpick').value = s.runPick || 'unmastered';
+  root.querySelector('#set-neworder').value = newOrder;
+  root.querySelector('#set-neworder').addEventListener('change', (e) => { setSettings({ newOrder: e.target.value }); homeView(data); });
   root.querySelectorAll('.rating-card[data-r]').forEach((b) => (b.onclick = () => { setSettings({ rating: Number(b.dataset.r) }); homeView(data); }));
   root.querySelectorAll('.option[data-mode]').forEach((b) => (b.onclick = () => go(`#/play/${b.dataset.mode}/${rating}`)));
   root.querySelector('#browse-card').onclick = () => go(`#/browse/${rating}`);

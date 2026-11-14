@@ -7,6 +7,14 @@ const shuffle = (a) => {
 };
 const accuracy = (r) => (r && r.n ? r.c / r.n : 1);
 
+// Order in which Learn introduces new puzzles. Ranked puzzles go by global difficulty;
+// puzzles without a difficulty score come after them in random order.
+export function orderNew(list, order) {
+  if (order === 'random') return shuffle([...list]);
+  const ranked = list.filter((p) => p.hardRank).sort((a, b) => (order === 'easiest' ? b.hardRank - a.hardRank : a.hardRank - b.hardRank));
+  return [...ranked, ...shuffle(list.filter((p) => !p.hardRank))];
+}
+
 export const MODES = {
   learn: {
     label: 'Learn',
@@ -52,7 +60,7 @@ class LearnSession extends Session {
     this.learning = shuffle(puzzles.filter((p) => getRec(p.id)?.b === 1));
     this.due = puzzles.filter((p) => { const r = getRec(p.id); return r && r.b >= 2 && r.d <= now; })
       .sort((a, b) => getRec(a.id).d - getRec(b.id).d);
-    this.fresh = shuffle(puzzles.filter((p) => !getRec(p.id)));
+    this.fresh = orderNew(puzzles.filter((p) => !getRec(p.id)), getSettings().newOrder);
     this.unsolvedOld = shuffle(puzzles.filter((p) => { const r = getRec(p.id); return r && r.b === 0; }));
   }
   next() {

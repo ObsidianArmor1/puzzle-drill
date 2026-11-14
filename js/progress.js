@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   sound: true,
   rotLeft: 'z', rotRight: 'x', undo: 'q',
   newPerSession: 20,   // new puzzles introduced per Learn session
+  newOrder: 'hardest', // order new Learn puzzles come in: hardest | easiest | random
   runSize: 50,         // puzzles per Perfect Run
   level: 18,           // block colors
 };
