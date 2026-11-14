@@ -313,4 +313,18 @@ test('set files round-trip, drop unknown puzzles, and names stay unique', () => 
   assert.equal(S.uniqueName('Fresh'), 'Fresh');
 });
 
+test('share links survive apps that re-encode them', () => {
+  const data = mkData();
+  const rule = { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'any' }, success: { min: 0, max: 49.99 } };
+  const set = S.saveSet({ name: '4★ under 50% success', ids: [], rule });
+  const { payload } = S.sharePayload(set);
+  assert.ok(!payload.includes('%'), 'no percent signs in new links');
+  assert.equal(S.parseShare(payload, data).name, '4★ under 50% success');
+  // whole fragment percent-encoded by an app
+  assert.equal(S.parseShare(encodeURIComponent(payload), data).name, '4★ under 50% success');
+  // older link format, double-encoded on the way (what actually happened)
+  const legacy = 'n=4%E2%98%85%2520under%252050%2525%2520success&' + payload.split('&')[1];
+  assert.equal(S.parseShare(legacy, data).name, '4★ under 50% success');
+});
+
 process.on('exit', () => { Date.now = realNow; });

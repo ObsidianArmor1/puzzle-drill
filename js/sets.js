@@ -182,12 +182,24 @@ function codeMap(data) {
 const toB64url = (str) => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64url = (s) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)));
 
+const safeDecode = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+// Undo extra layers of percent-encoding added by apps that re-encode links ("%2520" -> "%20" -> " ")
+function decodeRepeatedly(s) {
+  for (let i = 0; i < 3 && /%[0-9A-Fa-f]{2}/.test(s); i++) {
+    const d = safeDecode(s);
+    if (d === s) break;
+    s = d;
+  }
+  return s;
+}
+
 /** A rule can be shared as-is if it gives everyone the same puzzles (no personal progress filter, no randomness). */
 export const ruleIsPortable = (rule) => !!rule && (!rule.status || rule.status === 'any') && !(rule.limit && rule.limitOrder === 'random');
 
 /** Payload for the part of a share link after "#/shared/". */
 export function sharePayload(set) {
-  const name = `n=${encodeURIComponent(set.name)}`;
+  // The name is base64url too, so the link has no '%' signs for chat apps to re-encode
+  const name = `t=${toB64url(set.name)}`;
   if (ruleIsPortable(set.rule)) {
     // leave out values that match the defaults to keep links short
     const r = Object.fromEntries(Object.entries(set.rule).filter(([k, v]) =>
@@ -199,8 +211,15 @@ export function sharePayload(set) {
 
 /** Parse a share payload into { name, rule?, ids, unknown }. Throws on malformed input. */
 export function parseShare(payload, data) {
+  // Some apps percent-encode the whole fragment ("n%3D...%26r%3D..."); undo that first
+  if (!/[=&]/.test(payload) && /%3D/i.test(payload)) payload = safeDecode(payload);
   const params = new URLSearchParams(payload);
-  const name = (params.get('n') || 'Shared set').slice(0, 80);
+  let name = 'Shared set';
+  try {
+    if (params.has('t')) name = fromB64url(params.get('t'));
+    else if (params.has('n')) name = decodeRepeatedly(params.get('n')); // older links
+  } catch { /* keep the default name */ }
+  name = name.slice(0, 80) || 'Shared set';
   if (params.has('r')) {
     const raw = JSON.parse(fromB64url(params.get('r')));
     if (!raw || !Array.isArray(raw.ratings) || !raw.difficulty) throw new Error('This link has no valid set rules');
