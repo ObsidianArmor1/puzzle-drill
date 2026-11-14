@@ -399,18 +399,16 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       }
       cleanups.push(() => { puzzleBoard?.destroy(); puzzleBoard = null; });
     } else {
-      // Solution board: player's move (or a hovered engine move) on the dimmed board,
-      // with the correct answer outlined when the player missed it.
+      // Solution board, as on nestris.org: the player's move (or a hovered engine move) in color on the dimmed board
       const view = new NesBoard(boardEl, { scale: 3.3 });
       const sub = state.submission;
-      const best = dec.moves[0];
       const show = (move) => {
         const first = move ? move.first : sub?.first;
         const second = move ? move.second : sub?.second;
         view.update({
           board: dec.board, level: s.level,
           activePiece: first, nextPiece: second, activePieceOpacity: 1, nextPieceOpacity: 1, defaultOpacity: 0.6,
-          enginePieces: !move && state.idx !== 0 && best ? [best.first, best.second] : [],
+          enginePieces: [],
           gold: p.rating === 6,
         });
       };
