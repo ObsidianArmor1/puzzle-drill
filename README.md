@@ -64,7 +64,7 @@ Runs `tests/scheduling.test.mjs` with Node's built-in test runner. It covers the
 
 - `js/core.js`: nestris.org's `shared/` puzzle and tetris logic (board, pieces, puzzle ID decoding), bundled with esbuild. Don't edit it by hand.
 - `js/board.js`: NES board rendering and the hover/click placement controls, ported from the nestris client.
-- `js/session.js`: the drill modes. `js/progress.js`: spaced repetition and storage. `js/data.js`: puzzle loading. `js/app.js`: the screens.
+- `js/sets.js`: the Library, set rules and sharing. `js/session.js`: the drill modes. `js/progress.js`: spaced repetition and storage. `js/data.js`: puzzle loading. `js/app.js`: the screens.
 - `assets/`: font, icons and sounds from the nestris.org client.
 
 To rebuild `js/core.js` from a nestris.org checkout, bundle `shared/puzzles/encode-puzzle.ts`, `shared/tetris/{moveable-tetromino,tetris-board,tetromino-type,tetromino-colors,tetrominos}.ts` and `shared/puzzles/puzzle-theme.ts` into one ESM file with esbuild.

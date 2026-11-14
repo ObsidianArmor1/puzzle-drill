@@ -102,7 +102,7 @@ async function route() {
   if (parts[0] === 'puzzle') return puzzleView(data, parts[1]);
   if (parts[0] === 'browse') return browseView(data, legacy(parts[1]) || currentSet(data)?.key);
   if (parts[0] === 'share') return shareView(data, parts[1]);
-  if (parts[0] === 'sets' && parts[1] === 'new') return builderView(data, null);
+  if (parts[0] === 'sets' && parts[1] === 'new') return builderView(data, null, parts[2]);
   if (parts[0] === 'sets' && parts[1] === 'edit') return builderView(data, parts[2]);
   return homeView(data);
 }
@@ -176,9 +176,11 @@ function homeView(data) {
         <div class="row set-head"><h3>${sel.kind === 'rating' ? `${sel.rating}★ puzzles` : esc(sel.name)}</h3>
           <div class="row set-actions">
             ${solidButton({ label: 'Browse', color: '#2F3033', id: 'set-browse' })}
-            ${sel.kind === 'custom' ? solidButton({ label: 'Share', color: '#2F3033', id: 'set-share' }) : ''}
+            ${solidButton({ label: 'Share', color: '#2F3033', id: 'set-share' })}
+            ${sel.kind === 'rating' ? solidButton({ label: 'Customize', color: '#2F3033', id: 'set-customize' }) : ''}
             ${sel.kind === 'custom' ? solidButton({ label: sel.set.rule ? 'Edit' : 'Rename', color: '#2F3033', id: 'set-edit' }) : ''}
             ${sel.kind === 'custom' && sel.set.rule ? solidButton({ label: 'Refresh', color: '#2F3033', id: 'set-refresh' }) : ''}
+            ${sel.kind === 'custom' ? solidButton({ label: 'Duplicate', color: '#2F3033', id: 'set-dup' }) : ''}
             ${sel.kind === 'custom' ? solidButton({ label: 'Delete', color: '#B73C3C', id: 'set-delete' }) : ''}
           </div></div>
         <p>${selInfo}</p>
@@ -245,7 +247,12 @@ function homeView(data) {
   root.querySelectorAll('.option[data-mode]').forEach((b) => (b.onclick = () => go(`#/play/${b.dataset.mode}/${sel.key}`)));
   root.querySelector('#set-browse')?.addEventListener('click', () => go(`#/browse/${sel.key}`));
   root.querySelector('#set-edit')?.addEventListener('click', () => go(`#/sets/edit/${sel.set.id}`));
-  root.querySelector('#set-share')?.addEventListener('click', () => go(`#/share/${sel.set.id}`));
+  root.querySelector('#set-share')?.addEventListener('click', () => go(`#/share/${sel.kind === 'custom' ? sel.set.id : sel.key}`));
+  root.querySelector('#set-customize')?.addEventListener('click', () => go(`#/sets/new/${sel.key}`));
+  root.querySelector('#set-dup')?.addEventListener('click', () => {
+    const copy = saveSet({ name: uniqueName(`${sel.set.name} copy`), ids: [...sel.set.ids], ...(sel.set.rule ? { rule: structuredClone(sel.set.rule) } : {}) });
+    setSettings({ setKey: customKey(copy.id) }); toast(`Created "${copy.name}"`); homeView(data);
+  });
   root.querySelector('#set-refresh')?.addEventListener('click', () => {
     const ids = evaluateRule(data, sel.set.rule).map((p) => p.id);
     const added = ids.filter((id) => !sel.set.ids.includes(id)).length, removed = sel.set.ids.filter((id) => !ids.includes(id)).length;
@@ -334,11 +341,13 @@ function migrateSettings(data) {
 // =====================================================================================
 // SET BUILDER
 // =====================================================================================
-function builderView(data, editId) {
+function builderView(data, editId, fromKey) {
   const existing = editId ? getCustomSet(editId) : null;
   if (editId && !existing) return go('#/');
   const handpicked = existing && !existing.rule;
-  let rule = structuredClone(existing?.rule || DEFAULT_RULE);
+  // "Customize" on a default set starts from all of that star rating
+  const fromRating = fromKey && /^r\d$/.test(fromKey) ? Number(fromKey.slice(1)) : null;
+  let rule = structuredClone(existing?.rule || (fromRating ? { ...DEFAULT_RULE, ratings: [fromRating], difficulty: { type: 'any' } } : DEFAULT_RULE));
   let name = existing?.name || '';
   let nameTouched = !!existing;
   const ratings = [1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length);
@@ -353,7 +362,7 @@ function builderView(data, editId) {
       ${handpicked ? `<div class="panel"><p>This set was handpicked (${existing.ids.length.toLocaleString()} puzzles). Add or remove puzzles from Browse with "Collect into".</p></div>` : `
       <div class="panel">
         <h4>1 · Star ratings</h4>
-        <div class="row pills" id="b-ratings">${ratings.map((r) => `<button class="pill" data-r="${r}">${r}★ <small>${data.byRating.get(r).length.toLocaleString()}</small></button>`).join('')}</div>
+        <div class="row pills" id="b-ratings">${ratings.map((r) => { const n = data.byRating.get(r).length, k = (data.rankedByRating.get(r) || []).length; return `<button class="pill" data-r="${r}" title="${k.toLocaleString()} of ${n.toLocaleString()} have engine details (difficulty, theme, success rate)">${r}★ <small>${n.toLocaleString()}${k < n ? ` · ${k.toLocaleString()} ranked` : ''}</small></button>`; }).join('')}</div>
       </div>
       <div class="panel">
         <h4>2 · Difficulty</h4>
@@ -386,6 +395,10 @@ function builderView(data, editId) {
   $('#exit').onclick = () => go('#/');
 
   let result = handpicked ? existing.ids.map((id) => data.byId.get(id)).filter(Boolean) : [];
+  const unrankedExcluded = () => {
+    const usesDetails = rule.difficulty.type !== 'any' || (rule.success && (rule.success.min > 0 || rule.success.max < 100)) || (rule.themes && rule.themes.length);
+    return usesDetails ? rule.ratings.reduce((n, r) => n + (data.byRating.get(r)?.length || 0) - (data.rankedByRating.get(r)?.length || 0), 0) : 0;
+  };
   const refresh = () => {
     if (!handpicked) {
       $('#b-ratings').querySelectorAll('.pill').forEach((b) => b.classList.toggle('active', rule.ratings.includes(Number(b.dataset.r))));
@@ -399,6 +412,7 @@ function builderView(data, editId) {
     const pc = (x) => `${Math.round(x * 100)}%`;
     $('#b-preview').innerHTML = `<p class="big-count"><b>${result.length.toLocaleString()}</b> puzzles</p>
       <p>${rates.length ? `Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org. ` : ''}You've seen ${sum.seen.toLocaleString()} of them and mastered ${sum.mastered.toLocaleString()}; that progress carries over.</p>
+      ${!handpicked && unrankedExcluded() ? `<p class="warn-text">${unrankedExcluded().toLocaleString()} puzzles from the chosen star ratings have no engine details yet, so difficulty, success-rate and theme rules can't include them.</p>` : ''}
       ${!handpicked ? '<p>The puzzle list is saved when you create the set. Use <b>Refresh</b> later to re-apply these rules.</p>' : ''}`;
   };
 
@@ -499,7 +513,11 @@ const downloadText = (text, filename) => {
 const fileSafe = (name) => name.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 50) || 'set';
 
 function shareView(data, setId) {
-  const set = getCustomSet(setId);
+  // Default sets share as the rule "all puzzles of this star rating"
+  const builtIn = /^r\d$/.test(setId) ? resolveSet(data, setId) : null;
+  const set = builtIn
+    ? { name: `All ${builtIn.rating}★ puzzles`, ids: builtIn.puzzles.map((p) => p.id), rule: { ...DEFAULT_RULE, ratings: [builtIn.rating], difficulty: { type: 'any' } } }
+    : getCustomSet(setId);
   if (!set) return go('#/');
   const { kind, payload } = sharePayload(set);
   const link = `${location.origin}${location.pathname}#/shared/${payload}`;
@@ -907,13 +925,14 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
 // BROWSE
 // =====================================================================================
 const PAGE = 48;
-let browseState = { filter: 'all', sort: 'id', page: 0, q: '' };
+let browseState = { filter: 'all', sort: 'global', page: 0, q: '' };
 
 function browseView(data, key) {
   const set = resolveSet(data, key);
   if (!set) return go('#/');
   browseState.key = set.key;
   const all = set.puzzles;
+  const mixed = new Set(all.map((p) => p.rating)).size > 1;
   const customs = listSets();
   if (browseState.collect && !customs.some((c) => c.id === browseState.collect)) browseState.collect = null;
   const target = browseState.collect ? getCustomSet(browseState.collect) : null;
@@ -936,13 +955,17 @@ function browseView(data, key) {
   if (browseState.filter === 'unseen') browseState.filter = 'new';
   const f = tests[browseState.filter] ? browseState.filter : 'all';
   let list = withRec.filter(tests[f]);
-  if (browseState.q) list = list.filter((x) => x.p.id.includes(browseState.q) || (x.p.theme || '').toLowerCase().includes(browseState.q.toLowerCase()));
+  if (browseState.q) {
+    const q = browseState.q.toLowerCase();
+    list = list.filter((x) => x.p.id.includes(browseState.q) || (x.p.theme || '').toLowerCase().includes(q) || (PUZZLE_THEME_TEXT[x.p.theme] || '').toLowerCase().includes(q));
+  }
   const acc = (r) => (r && r.n ? r.c / r.n : 2);
   const sorters = {
     id: (a, b) => a.p.id.localeCompare(b.p.id),
     accuracy: (a, b) => acc(a.r) - acc(b.r),
     recent: (a, b) => (b.r?.l || 0) - (a.r?.l || 0),
-    global: (a, b) => ((a.p.attempts ? a.p.solves / a.p.attempts : 2) - (b.p.attempts ? b.p.solves / b.p.attempts : 2)),
+    global: (a, b) => (a.p.successRate ?? 2) - (b.p.successRate ?? 2),
+    easiest: (a, b) => (b.p.successRate ?? -1) - (a.p.successRate ?? -1),
   };
   list.sort(sorters[browseState.sort] || sorters.id);
   const pages = Math.max(1, Math.ceil(list.length / PAGE));
@@ -956,7 +979,7 @@ function browseView(data, key) {
       <div class="controls">
         <select id="b-set">${libraryKeys(data).map((k) => { const x = resolveSet(data, k); return x ? `<option value="${esc(k)}"${k === set.key ? ' selected' : ''}>${esc(x.kind === 'rating' ? `${x.rating}★ (default)` : x.name)} (${x.puzzles.length.toLocaleString()})</option>` : ''; }).join('')}</select>
         <select id="b-filter">${[['all', 'All'], ['mastered', 'Mastered'], ['progress', 'In progress'], ['learning', 'Learning (missed last time)'], ['new', 'New (never seen)'], ['due', 'Due for review'], ['missed', 'Ever missed']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l} (${counts[v].toLocaleString()})</option>`).join('')}</select>
-        <select id="b-sort">${[['id', 'Sort: ID'], ['accuracy', 'Sort: your accuracy'], ['recent', 'Sort: recently played'], ['global', 'Sort: hardest globally']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="b-sort">${[['global', 'Sort: hardest first'], ['easiest', 'Sort: easiest first'], ['accuracy', 'Sort: your worst first'], ['recent', 'Sort: recently played'], ['id', 'Sort: puzzle ID']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input id="b-q" placeholder="Search ID or theme" value="${esc(browseState.q)}" size="16">
         <span>${list.length.toLocaleString()} puzzles</span>
       </div>
@@ -986,7 +1009,7 @@ function browseView(data, key) {
     tile.className = `tile st-${st}`;
     tile.innerHTML = `${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
-      <div class="meta"><span class="st-badge st-${st}">${label}</span><span>${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
+      <div class="meta"><span class="st-badge st-${st}">${label}</span><span title="Hardness rank within ${p.rating}★">${mixed ? `${p.rating}★ ` : ''}${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
       <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${p.attempts ? Math.round((p.solves / p.attempts) * 100) + '% global' : ''}</span></div>`;
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({ board: d.board, level: s.level });
     tile.querySelector('.collect-btn')?.addEventListener('click', (e) => {
