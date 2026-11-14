@@ -77,7 +77,7 @@ export function resolveSet(data, key) {
 //   ratings: [4],                                   star ratings to draw from
 //   difficulty: { type: 'any' | 'topN' | 'topPct' | 'range', n, pct, from, to },
 //                                                   applied to the chosen star ratings as a whole,
-//                                                   ranked by global success rate (lowest = hardest)
+//                                                   ranked by difficulty (smoothed global success rate, lowest = hardest)
 //   success: { min, max } | null                    global success rate band, in percent
 //   themes: ['CLEAN', ...] | null                   null = any theme
 //   status: 'any' | 'notMastered' | 'new' | 'missed' | 'learning' | 'mastered'
@@ -94,12 +94,12 @@ const statusTest = {
   mastered: (r) => !!r && r.b >= MASTERED_BOX,
 };
 
-/** Puzzles matching a rule, hardest first where ranked. Pure apart from reading progress. */
+/** Puzzles matching a rule, hardest first. Pure apart from reading progress. */
 export function evaluateRule(data, rule) {
   const ratings = (rule.ratings || []).filter((r) => data.byRating.get(r)?.length);
   const pool = ratings.flatMap((r) => data.byRating.get(r));
-  const ranked = pool.filter((p) => p.successRate !== undefined)
-    .sort((a, b) => a.successRate - b.successRate || b.attempts - a.attempts || (a.id < b.id ? -1 : 1));
+  const hardness = (p) => p.difficulty ?? p.successRate ?? 0.5;
+  const ranked = [...pool].sort((a, b) => hardness(a) - hardness(b) || (b.attempts || 0) - (a.attempts || 0) || (a.id < b.id ? -1 : 1));
   const d = rule.difficulty || { type: 'any' };
   let list;
   if (d.type === 'topN') list = ranked.slice(0, Math.max(0, Math.floor(d.n || 0)));
@@ -107,7 +107,7 @@ export function evaluateRule(data, rule) {
   else if (d.type === 'range') {
     const from = Math.max(0, Math.min(100, d.from || 0)), to = Math.max(from, Math.min(100, d.to ?? 100));
     list = ranked.slice(Math.floor((from / 100) * ranked.length), Math.ceil((to / 100) * ranked.length));
-  } else list = [...ranked, ...pool.filter((p) => p.successRate === undefined)];
+  } else list = ranked;
 
   if (rule.success && (rule.success.min > 0 || rule.success.max < 100)) {
     const lo = (rule.success.min ?? 0) / 100, hi = (rule.success.max ?? 100) / 100;

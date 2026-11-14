@@ -26,38 +26,31 @@ export function loadAll() {
     }
     for (const list of byRating.values()) list.sort((a, b) => a.id.localeCompare(b.id));
 
-    // Difficulty ranking per rating: lowest global success rate first (hardest = rank 1).
-    // Only puzzles with engine details have attempt/solve counts, so only those are ranked.
-    const rankedByRating = new Map();
-    for (const [rating, list] of byRating) {
-      const ranked = list.filter((p) => p.attempts > 0)
-        .sort((a, b) => (a.solves / a.attempts) - (b.solves / b.attempts) || b.attempts - a.attempts || (a.id < b.id ? -1 : 1));
-      ranked.forEach((p, i) => { p.hardRank = i + 1; p.successRate = p.solves / p.attempts; });
-      rankedByRating.set(rating, ranked);
-    }
+    const rankedByRating = rankByDifficulty(byRating);
     return { byId, byRating, rankedByRating, manifest };
   })();
   return cache;
 }
 
-/**
- * The puzzles of a rating inside a difficulty range.
- * range = { from, to } in percent of the ranked list, hardest first (e.g. {from: 0, to: 10} = hardest 10%).
- * No range, or 0–100, means the whole set (including puzzles without a difficulty score).
- */
-export function difficultySlice(data, rating, range) {
-  const all = data.byRating.get(rating) || [];
-  if (!range || (range.from <= 0 && range.to >= 100)) return { puzzles: all, all: true, ranked: (data.rankedByRating.get(rating) || []).length, unranked: 0 };
-  const ranked = data.rankedByRating.get(rating) || [];
-  const n = ranked.length;
-  const start = Math.max(0, Math.floor((range.from / 100) * n));
-  const end = Math.min(n, Math.max(start + (n ? 1 : 0), Math.ceil((range.to / 100) * n)));
-  const puzzles = ranked.slice(start, end);
-  return {
-    puzzles, all: false, ranked: n, unranked: all.length - n,
-    hardest: puzzles.length ? puzzles[0].successRate : null,
-    easiest: puzzles.length ? puzzles[puzzles.length - 1].successRate : null,
-  };
+// Difficulty: each puzzle's success rate on nestris.org, smoothed toward its star rating's average as if it
+// had PRIOR extra attempts at that average. Puzzles with few or no attempts (common for 1-star) land near the
+// middle instead of at a random 0% or 100%; well-attempted puzzles barely move. Every puzzle gets a rank.
+const PRIOR = 10;
+export function rankByDifficulty(byRating) {
+  const rankedByRating = new Map();
+  for (const [rating, list] of byRating) {
+    let attempts = 0, solves = 0;
+    for (const p of list) { attempts += p.attempts || 0; solves += p.solves || 0; }
+    const mean = attempts ? solves / attempts : 0.5;
+    for (const p of list) {
+      p.difficulty = ((p.solves || 0) + PRIOR * mean) / ((p.attempts || 0) + PRIOR);
+      if (p.attempts > 0) p.successRate = p.solves / p.attempts; // raw rate, for display and filters
+    }
+    const ranked = [...list].sort((x, y) => x.difficulty - y.difficulty || (y.attempts || 0) - (x.attempts || 0) || (x.id < y.id ? -1 : 1));
+    ranked.forEach((p, i) => { p.hardRank = i + 1; });
+    rankedByRating.set(rating, ranked);
+  }
+  return rankedByRating;
 }
 
 function add(byId, rec) {
@@ -70,7 +63,6 @@ function add(byId, rec) {
     moves: rec.m.map(([c, n, s], k) => ({ current: c, next: n, score: s, guesses: rec.g ? rec.g[k] : null })),
     attempts: rec.a ?? null,
     solves: rec.s ?? null,
-    hasDetails: rec.a !== undefined,
   });
 }
 

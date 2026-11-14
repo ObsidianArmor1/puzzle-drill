@@ -13,7 +13,7 @@ globalThis.window = { addEventListener() {} };
 
 const P = await import('../js/progress.js');
 const { createSession, orderNew } = await import('../js/session.js');
-const { difficultySlice } = await import('../js/data.js');
+const { rankByDifficulty } = await import('../js/data.js');
 const S = await import('../js/sets.js');
 
 const DAY = 86400000;
@@ -164,43 +164,36 @@ test('Perfect Run uses the configured size and reports misses', () => {
 });
 
 // ---------------- difficulty slices ----------------
-test('difficulty slice picks the hardest X% of ranked puzzles', () => {
-  const all = puzzles(200);
-  const data = { byRating: new Map([[4, all]]), rankedByRating: new Map([[4, all]]) };
-  const top10 = difficultySlice(data, 4, { from: 0, to: 10 });
-  assert.equal(top10.puzzles.length, 20);
-  assert.equal(top10.puzzles[0].id, 'p1');
-  assert.equal(top10.puzzles.at(-1).id, 'p20');
-  const band = difficultySlice(data, 4, { from: 5, to: 20 });
-  assert.equal(band.puzzles.length, 30);
-  assert.equal(band.puzzles[0].id, 'p11');
-  const whole = difficultySlice(data, 4, { from: 0, to: 100 });
-  assert.equal(whole.all, true);
-  assert.equal(whole.puzzles.length, 200);
+// ---------------- difficulty ranking ----------------
+test('every puzzle is ranked; few attempts are pulled toward the rating average', () => {
+  const list = [
+    { id: 'a', attempts: 100, solves: 10 },  // reliably hard (10%)
+    { id: 'b', attempts: 1, solves: 0 },     // 0% from a single try: not trusted
+    { id: 'c', attempts: 0, solves: 0 },     // never tried
+    { id: 'd', attempts: 100, solves: 90 },  // reliably easy (90%)
+  ];
+  const ranked = rankByDifficulty(new Map([[1, list]])).get(1);
+  assert.deepEqual(ranked.map((p) => p.id), ['a', 'b', 'c', 'd']);
+  assert.ok(ranked.every((p) => p.hardRank >= 1));
+  const byId = Object.fromEntries(list.map((p) => [p.id, p]));
+  assert.equal(byId.b.successRate, 0);          // raw rate kept for display
+  assert.equal(byId.c.successRate, undefined);  // no attempts, no raw rate
+  assert.ok(byId.b.difficulty > 0.3 && byId.b.difficulty < 0.5, 'single-try puzzle lands near the average');
 });
 
-test('difficulty slice leaves out unranked puzzles and says how many', () => {
-  const ranked = puzzles(90);
-  const unranked = puzzles(10, false).map((p) => ({ ...p, id: 'u' + p.id }));
-  const data = { byRating: new Map([[4, [...ranked, ...unranked]]]), rankedByRating: new Map([[4, ranked]]) };
-  const s = difficultySlice(data, 4, { from: 0, to: 50 });
-  assert.equal(s.puzzles.length, 45);
-  assert.equal(s.unranked, 10);
-});
-
-// ---------------- sets ----------------
-// 3 ratings; puzzle i in rating r has successRate i/100, themes rotate, some 5-star puzzles unranked
+// 3 ratings; puzzle i in rating r has successRate i/100, themes rotate; half the 5-star puzzles were never attempted
 const mkData = () => {
   const byRating = new Map(), byId = new Map();
   const themes = ['CLEAN', 'OVERHANG', 'BURN', 'DIG', 'SPIRE'];
   for (const r of [3, 4, 5]) {
     const list = Array.from({ length: 100 }, (_, i) => {
-      const ranked = !(r === 5 && i >= 50);
-      const p = { id: `r${r}-${i}`, rating: r, theme: ranked ? themes[i % 5] : null, ...(ranked ? { successRate: (i + 1) / 101, attempts: 50, hardRank: i + 1 } : {}) };
+      const tried = !(r === 5 && i >= 50);
+      const p = { id: `r${r}-${i}`, rating: r, theme: themes[i % 5], attempts: tried ? 101 : 0, solves: tried ? i + 1 : 0 };
       byId.set(p.id, p); return p;
     });
     byRating.set(r, list);
   }
+  rankByDifficulty(byRating);
   return { byRating, byId };
 };
 
@@ -214,9 +207,11 @@ test('rule: hardest N across the chosen ratings, hardest first', () => {
   assert.equal(new Set(both.map((p) => p.rating)).size, 2); // ties across ratings interleave
 });
 
-test('rule: hardest % and range are taken over ranked puzzles only', () => {
+test('rule: hardest % and range cover every puzzle; never-tried ones rank near the middle', () => {
   const data = mkData();
-  assert.equal(S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [5], difficulty: { type: 'topPct', pct: 10 } }).length, 5); // 50 ranked
+  const top = S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [5], difficulty: { type: 'topPct', pct: 10 } });
+  assert.equal(top.length, 10);
+  assert.ok(top.every((p) => p.attempts > 0), 'the hardest 10% are puzzles players actually missed');
   const band = S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'range', from: 10, to: 20 } });
   assert.equal(band.length, 10);
   assert.equal(band[0].id, 'r4-10');

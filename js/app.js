@@ -336,7 +336,7 @@ function builderView(data, editId, fromKey) {
       ${handpicked ? `<div class="panel"><p>This set was handpicked (${existing.ids.length.toLocaleString()} puzzles). Add or remove puzzles from Browse with "Collect into".</p></div>` : `
       <div class="panel">
         <h4>1 · Star ratings</h4>
-        <div class="row pills" id="b-ratings">${ratings.map((r) => { const n = data.byRating.get(r).length, k = (data.rankedByRating.get(r) || []).length; return `<button class="pill" data-r="${r}" title="${k.toLocaleString()} of ${n.toLocaleString()} have engine details (difficulty, theme, success rate)">${r}★ <small>${n.toLocaleString()}${k < n ? ` · ${k.toLocaleString()} ranked` : ''}</small></button>`; }).join('')}</div>
+        <div class="row pills" id="b-ratings">${ratings.map((r) => `<button class="pill" data-r="${r}">${r}★ <small>${data.byRating.get(r).length.toLocaleString()}</small></button>`).join('')}</div>
       </div>
       <div class="panel">
         <h4>2 · Difficulty</h4>
@@ -345,7 +345,7 @@ function builderView(data, editId, fromKey) {
           <button class="pill" data-t="topPct">Hardest %</button><button class="pill" data-t="range">Range</button>
         </div>
         <div class="row" id="b-dparams"></div>
-        <p>Ranked by how rarely players solve each puzzle on nestris.org, across the star ratings chosen above. Only puzzles with engine details have a rank.</p>
+        <p>Ranked by how rarely players solve each puzzle on nestris.org, across the star ratings chosen above. Puzzles with only a few attempts are ranked closer to average.</p>
       </div>
       <div class="panel">
         <h4>3 · Narrow it down <small>(optional)</small></h4>
@@ -369,10 +369,7 @@ function builderView(data, editId, fromKey) {
   $('#exit').onclick = () => go('#/');
 
   let result = handpicked ? existing.ids.map((id) => data.byId.get(id)).filter(Boolean) : [];
-  const unrankedExcluded = () => {
-    const usesDetails = rule.difficulty.type !== 'any' || (rule.success && (rule.success.min > 0 || rule.success.max < 100)) || (rule.themes && rule.themes.length);
-    return usesDetails ? rule.ratings.reduce((n, r) => n + (data.byRating.get(r)?.length || 0) - (data.rankedByRating.get(r)?.length || 0), 0) : 0;
-  };
+
   const refresh = () => {
     if (!handpicked) {
       $('#b-ratings').querySelectorAll('.pill').forEach((b) => b.classList.toggle('active', rule.ratings.includes(Number(b.dataset.r))));
@@ -386,7 +383,6 @@ function builderView(data, editId, fromKey) {
     const pc = (x) => `${Math.round(x * 100)}%`;
     $('#b-preview').innerHTML = `<p class="big-count"><b>${result.length.toLocaleString()}</b> puzzles</p>
       <p>${rates.length ? `Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org. ` : ''}You've seen ${sum.seen.toLocaleString()} of them and mastered ${sum.mastered.toLocaleString()}; that progress carries over.</p>
-      ${!handpicked && unrankedExcluded() ? `<p class="warn-text">${unrankedExcluded().toLocaleString()} puzzles from the chosen star ratings have no engine details yet, so difficulty, success-rate and theme rules can't include them.</p>` : ''}
       ${!handpicked ? '<p>The puzzle list is saved when you create the set. Use <b>Refresh</b> later to re-apply these rules.</p>' : ''}`;
   };
 
@@ -570,6 +566,9 @@ function receiveView(data, parse, source = 'link') {
   onKey((e) => { if (e.key === 'Escape') go('#/'); });
 }
 
+// Global success rate for tiles; puzzles with very few attempts say so instead of showing a noisy %
+const globalLabel = (p) => !p.attempts ? 'never tried on nestris' : p.attempts < 5 ? `${p.solves}/${p.attempts} solved globally` : `${Math.round(p.successRate * 100)}% global`;
+
 // ---------- keybinds ----------
 const KEY_NAMES = {
   ' ': 'Space', arrowleft: '←', arrowright: '→', arrowup: '↑', arrowdown: '↓', shift: 'Shift', control: 'Ctrl',
@@ -710,7 +709,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
 
     const engineRows = dec.moves.map((m, i) => `
       <div class="row-container">
-        <div class="guesses"><p>${p.hasDetails ? (m.guesses ?? 0).toLocaleString() : '–'}</p></div><div></div>
+        <div class="guesses"><p>${(m.guesses ?? 0).toLocaleString()}</p></div><div></div>
         <div class="engine-move table-rows${i === 0 ? ' first-move' : ''}${i === state.idx ? ' player-move' : ''}" data-move="${i}">
           <p><b>#${i + 1}</b></p>
           <p>${m.score === null || m.score === undefined ? '–' : m.score > 0 ? '+' + m.score : m.score}</p>
@@ -759,7 +758,6 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
                       <div class="labels table-rows"><p>Rank</p><p>Score</p><p>Current</p><p>Next</p></div></div>
                     ${engineRows}${yourMoveRow}
                   </div>
-                  ${p.hasDetails ? '' : '<p class="engine-note">Only the best move is known for this puzzle (no details scraped yet).</p>'}
                 </div>
               `}
             </div>
@@ -966,7 +964,7 @@ function browseView(data, key) {
     tile.innerHTML = `${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
       <div class="meta"><span class="st-badge st-${st}">${label}</span><span title="Hardness rank within ${p.rating}★">${mixed ? `${p.rating}★ ` : ''}${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
-      <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${p.attempts ? Math.round((p.solves / p.attempts) * 100) + '% global' : ''}</span></div>`;
+      <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${globalLabel(p)}</span></div>`;
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({ board: d.board, level: s.level });
     tile.querySelector('.collect-btn')?.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
@@ -1183,7 +1181,7 @@ function renderSummary(data, session) {
     tile.className = 'tile st-learning';
     tile.innerHTML = `<div class="b"></div>
       <div class="meta"><span>Best: <b>${esc(best.first.getTetrisNotation())} · ${esc(best.second.getTetrisNotation())}</b></span></div>
-      <div class="meta"><span>${e.you ? `You: ${esc(e.you)}` : 'You viewed the solution'}</span><span>${p.successRate !== undefined ? Math.round(p.successRate * 100) + '% global' : ''}</span></div>`;
+      <div class="meta"><span>${e.you ? `You: ${esc(e.you)}` : 'You viewed the solution'}</span><span>${globalLabel(p)}</span></div>`;
     tile.onclick = () => { singleReturn = '#/summary'; };
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({
       board: d.board, level: lvl, activePiece: best.first, nextPiece: best.second, defaultOpacity: 0.55,

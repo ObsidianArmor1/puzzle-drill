@@ -35,18 +35,13 @@ Progress is stored per puzzle ID in each player's browser (localStorage), so upd
 - **Settings** (top right): keybinds, timer, sound, session sizes, backup (export/import) and reset.
 - After a session, **Review your misses** shows each missed puzzle with the correct answer; click one to try it again.
 
-## Updating the puzzles
+## Puzzle data
 
-1. Run the scraper (`../tools/nestris-puzzle-scraper.js`) on nestris.org and click **Download all**.
-2. Merge it into the site:
-   ```bash
-   node tools/import-scrape.mjs ~/Downloads/nestris-puzzles-*.json
-   ```
-   This keeps every puzzle already in `data/` and adds new ones. A puzzle that now has engine details replaces its old entry.
-   Each data file gets a content hash in its name, so players pick up the new data on their next visit.
-3. Commit and push. GitHub Pages redeploys within a minute or two.
+`data/` holds the complete nestris.org rated-puzzle bank as of November 2026: 42,480 puzzles (1★ 8,765 · 2★ 7,709 · 3★ 7,242 · 4★ 10,048 · 5★ 8,716), each with the engine's top 5 moves, scores, guess counts, theme and global attempts/solves.
 
-Puzzles without details only know the best move. Correct/incorrect still works, but the engine table shows a single row.
+Difficulty is each puzzle's global success rate, smoothed toward its star rating's average (as if it had 10 extra attempts at the average). Most 1★ puzzles have only one or no attempts, so without smoothing their rate would be a random 0% or 100%.
+
+If the bank ever changes, export again with the scraper (`../tools/nestris-puzzle-scraper.js`, **Download all**) and run `node tools/import-scrape.mjs <export.json>`. It merges into `data/` and renames the files by content hash so browsers pick up the change. Players' progress is untouched.
 
 ## Run locally
 

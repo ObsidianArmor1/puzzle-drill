@@ -1,20 +1,20 @@
 {
-  "generatedAt": "2026-11-14T07:42:12.209Z",
+  "generatedAt": "2026-11-14T09:53:50.385Z",
   "ratings": {
     "1": {
-      "file": "puzzles-1.e7e378253d.json",
+      "file": "puzzles-1.603a8c5ede.json",
       "count": 8765,
-      "withDetails": 1
+      "withDetails": 8765
     },
     "2": {
-      "file": "puzzles-2.8b4d5c9a21.json",
+      "file": "puzzles-2.24e5fb2d62.json",
       "count": 7709,
-      "withDetails": 0
+      "withDetails": 7709
     },
     "3": {
-      "file": "puzzles-3.f232ddf9f7.json",
+      "file": "puzzles-3.47017070d6.json",
       "count": 7242,
-      "withDetails": 23
+      "withDetails": 7242
     },
     "4": {
       "file": "puzzles-4.75be49b165.json",
@@ -22,9 +22,9 @@
       "withDetails": 10048
     },
     "5": {
-      "file": "puzzles-5.8027211005.json",
+      "file": "puzzles-5.6638bc21f3.json",
       "count": 8716,
-      "withDetails": 942
+      "withDetails": 8716
     }
   }
 }
