@@ -288,6 +288,30 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .st-badge.st-progress { background: var(--gold); color: #2b1d00; }
 .st-badge.st-learning { background: var(--ui-red); color: #2b0606; }
 .st-badge.st-new { background: #4a4a50; color: #ddd; }
+
+/* Khan-style tiers */
+.tier-badge {
+  font-family: var(--main-font); font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap; display: inline-block;
+}
+.t-new { background: #4a4a50; color: #ddd; }
+.t-attempted { background: #E8875A; color: #2a1405; }
+.t-familiar { background: #B9A9F5; color: #1d1440; }
+.t-proficient { background: #7B61E6; color: #fff; }
+.t-mastered { background: #3349D6; color: #fff; }
+.tile.t-new { background-color: transparent; }
+.tile.t-attempted, .tile.t-familiar, .tile.t-proficient, .tile.t-mastered { background-color: transparent; }
+.tile.t-attempted { border-color: rgba(232, 135, 90, 0.6); }
+.tile.t-familiar { border-color: rgba(185, 169, 245, 0.5); }
+.tile.t-proficient { border-color: rgba(123, 97, 230, 0.7); }
+.tile.t-mastered { border-color: rgba(51, 73, 214, 0.9); }
+.tier-change { font-family: var(--main-font); font-size: 10px; font-weight: 700; margin-left: 6px; white-space: nowrap; }
+.tier-change.up, .tier-up { color: #8FD99C; }
+.tier-change.down, .tier-down { color: #F28B82; }
+.tier-bar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: #4a4a50; margin-top: 10px; gap: 1px; }
+.tier-bar span { min-width: 3px; }
+.tier-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; margin-top: 6px; font-family: var(--main-font); font-size: 11px; opacity: 0.9; }
+.tier-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .legend-item {
   display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px;
@@ -463,3 +487,7 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .home > .set-panel, .home > .continue, .home > .intro { width: min(760px, 100%); }
 .mode-btn { gap: 6px; padding: 9px 6px; font-size: 14px; }
 .mode-btn img { width: 24px; height: 24px; }
+
+.tier-cell { min-width: 110px; }
+.tier-cell .tier-bar { margin-top: 0; height: 8px; }
+.stats-tiers { width: 100%; max-width: 720px; box-sizing: border-box; padding-inline: 8px; }

@@ -6,8 +6,10 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 ## Modes
 
 - **Learn**: spaced repetition. Puzzles that are due come first, missed puzzles are asked again a few puzzles later, then up to N new puzzles are added (N is set in Settings).
-  Correct answers on due puzzles schedule the next review in 1 → 3 → 7 → 16 → 35 days. A miss resets the puzzle.
-  A puzzle counts as *mastered* once it reaches the 7-day stage.
+  Correct answers on due puzzles schedule the next review in 1 → 3 → 7 → 16 → 35 days.
+  Every puzzle has a **tier**, like Khan Academy's skills: *Not started* → *Attempted* → *Familiar* (next review in a day) → *Proficient* (3 days) → *Mastered* (7 days and up).
+  A miss drops a puzzle **one tier** (Mastered → Proficient → Familiar → Attempted) and brings it back the next day; Attempted puzzles are re-asked in the same session.
+  Tiers show on the solution screen (with ▲/▼ when one changes), on Browse tiles, as a bar under each set on the home page, in the session summary, and on the Progress page.
   New puzzles come **hardest first** by default, so Learn works its way down the set by difficulty (changeable to easiest first or random in Settings).
 - **Perfect Run**: N puzzles in a row, aiming for zero mistakes. Afterwards, *Re-run misses* until the set is clean.
 - **Play Through**: every puzzle in the set exactly once, in order (a star set goes hardest first; a custom or shared set keeps its own order). Stop any time and it resumes where you left off; when you've played them all it shows your score and **Start over** begins a new pass.

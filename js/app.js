@@ -7,9 +7,9 @@ import {
 import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
 import { createSession, MODES, orderNew, throughStatus, resetThrough } from './session.js';
 import {
-  getSettings, setSettings, getRec, record, summarize, getDaily, isMastered, resetProgress, MASTERED_BOX,
+  getSettings, setSettings, getRec, record, summarize, getDaily, resetProgress,
   exportProgress, importProgress, lastBackup, progressCount,
-  getDailyAll, bestStreak, snapshotSets, getHistory, dayKey,
+  getDailyAll, bestStreak, snapshotSets, getHistory, dayKey, TIERS, tierIndex,
 } from './progress.js';
 import { PUZZLE_THEME_TEXT } from './core.js';
 
@@ -43,6 +43,14 @@ function solidButton({ label, icon, color = '#3C5EB7', stretch = false, id, disa
     </button></span>`;
 }
 const outlineButton = (label, cls = '', id = '') => `<button class="outline-button prevent-select ${cls}"${id ? ` id="${id}"` : ''}><span class="label">${esc(label)}</span></button>`;
+// Khan-style tiers: badge, and a bar of how a set's puzzles split across tiers (Mastered first)
+const tierBadge = (i) => `<span class="tier-badge t-${TIERS[i].key}" title="${TIERS[i].tip}">${TIERS[i].label}</span>`;
+const tierStrip = (tiers) => `<div class="tier-bar">${[4, 3, 2, 1, 0].map((i) => tiers[i] ? `<span class="t-${TIERS[i].key}" style="flex:${tiers[i]}" title="${TIERS[i].label}: ${tiers[i].toLocaleString()}"></span>` : '').join('')}</div>`;
+const tierBar = (tiers) => {
+  const order = [4, 3, 2, 1, 0];
+  return `${tierStrip(tiers)}
+    <div class="tier-legend">${order.map((i) => `<span title="${TIERS[i].tip}"><i class="t-${TIERS[i].key}"></i>${TIERS[i].label} <b>${tiers[i].toLocaleString()}</b></span>`).join('')}</div>`;
+};
 const stars = (rating, width = 75) => `<img src="assets/img/rating-icons/star-${rating >= 1 && rating <= 6 ? rating : 'none'}.svg" width="${rating === 6 ? width * 1.198 : width}">`;
 
 let toastTimer;
@@ -237,7 +245,7 @@ function homeView(data) {
           <div class="summary-chip"><span class="v">${sum.due + sum.learning}</span><span class="k">due now</span></div>
           <div class="summary-chip"><span class="v">${(sum.total - sum.seen).toLocaleString()}</span><span class="k">never seen</span></div>
           <div class="summary-chip"><span class="v">${sum.attempts ? Math.round((sum.correct / sum.attempts) * 100) + '%' : '–'}</span><span class="k">accuracy</span></div>
-        </div>` : ''}
+        </div>${tierBar(sum.tiers)}` : ''}
         <div class="mode-row">
           ${modeBtn('learn', sum ? (sum.due + sum.learning || '') : '')}
           ${modeBtn('run', Math.min(s.runSize, list.length) || '')}
@@ -666,11 +674,13 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
     const ms = performance.now() - state.start;
     const idx = matchSubmission(state.dec.moves, sub?.first, sub?.second);
     const correct = idx === 0;
+    state.tierBefore = undefined;
     if (!state.isRetry) {
+      state.tierBefore = tierIndex(getRec(state.p.id));
       state.recRes = record(state.p.id, correct, ms, correct ? undefined : idx);
       session.result(state.p, correct);
       (session.log ||= []).push({
-        id: state.p.id, correct, idx,
+        id: state.p.id, correct, idx, tb: state.tierBefore, ta: tierIndex(getRec(state.p.id)),
         you: sub?.first && sub?.second ? `${sub.first.getTetrisNotation()} · ${sub.second.getTetrisNotation()}` : null,
       });
     }
@@ -710,7 +720,9 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         <hr>
         <div class="stat"><h1>Your record</h1><p>${rec ? `${rec.c} / ${rec.n}` : '–'}</p></div>
         ${rec?.bt ? `<div class="stat"><h1>Your best time</h1><p>${(rec.bt / 1000).toFixed(1)}s</p></div>` : ''}
-        <div class="stat"><h1>Next review</h1><p>${!rec ? '–' : rec.b <= 1 ? 'this session' : `in ${fmtInterval(rec.d - Date.now())}${isMastered(rec) ? ' · mastered' : ''}`}</p></div>
+        <div class="stat"><h1>Tier</h1><p>${tierBadge(tierIndex(rec))}${solved && state.tierBefore !== undefined && state.tierBefore !== tierIndex(rec) && (state.tierBefore > 0 || state.idx === 0)
+          ? `<span class="tier-change ${tierIndex(rec) > state.tierBefore ? 'up' : 'down'}">${tierIndex(rec) > state.tierBefore ? '▲' : '▼'} from ${TIERS[state.tierBefore].label}</span>` : ''}</p></div>
+        <div class="stat"><h1>Next review</h1><p>${!rec ? '–' : rec.b <= 1 ? 'this session' : rec.d <= Date.now() ? 'now' : `in ${fmtInterval(rec.d - Date.now())}`}</p></div>
       </div>`;
 
     const engineRows = dec.moves.map((m, i) => `
@@ -916,21 +928,20 @@ function browseView(data, key) {
   const target = browseState.collect ? getCustomSet(browseState.collect) : null;
   const inTarget = new Set(target?.ids || []);
   const now = Date.now();
-  // mastered: reached the 7-day stage · progress: answered correctly, not mastered yet
-  // learning: missed last time · new: never seen
-  const statusOf = (r) => (!r ? 'new' : r.b <= 1 ? 'learning' : r.b >= MASTERED_BOX ? 'mastered' : 'progress');
+  const statusOf = (r) => TIERS[tierIndex(r)].key; // new · attempted · familiar · proficient · mastered
   const withRec = all.map((p) => ({ p, r: getRec(p.id) }));
   const tests = {
     all: () => true,
     mastered: (x) => statusOf(x.r) === 'mastered',
-    progress: (x) => statusOf(x.r) === 'progress',
-    learning: (x) => statusOf(x.r) === 'learning',
+    proficient: (x) => statusOf(x.r) === 'proficient',
+    familiar: (x) => statusOf(x.r) === 'familiar',
+    attempted: (x) => statusOf(x.r) === 'attempted',
     new: (x) => !x.r,
     due: (x) => x.r && x.r.b >= 2 && x.r.d <= now,
     missed: (x) => x.r && x.r.c < x.r.n,
   };
   const counts = Object.fromEntries(Object.entries(tests).map(([k, t]) => [k, withRec.filter(t).length]));
-  if (browseState.filter === 'unseen') browseState.filter = 'new';
+  browseState.filter = { unseen: 'new', learning: 'attempted', progress: 'familiar' }[browseState.filter] || browseState.filter;
   const f = tests[browseState.filter] ? browseState.filter : 'all';
   let list = withRec.filter(tests[f]);
   if (browseState.q) {
@@ -956,7 +967,7 @@ function browseView(data, key) {
       <header><h1 class="title">BROWSE</h1></header>
       <div class="controls">
         <select id="b-set">${libraryKeys(data).map((k) => { const x = resolveSet(data, k); return x ? `<option value="${esc(k)}"${k === set.key ? ' selected' : ''}>${esc(x.kind === 'rating' ? `${x.rating}★ (default)` : x.name)} (${x.puzzles.length.toLocaleString()})</option>` : ''; }).join('')}</select>
-        <select id="b-filter">${[['all', 'All'], ['mastered', 'Mastered'], ['progress', 'In progress'], ['learning', 'Learning (missed last time)'], ['new', 'New (never seen)'], ['due', 'Due for review'], ['missed', 'Ever missed']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l} (${counts[v].toLocaleString()})</option>`).join('')}</select>
+        <select id="b-filter">${[['all', 'All'], ...[4, 3, 2, 1, 0].map((i) => [TIERS[i].key, TIERS[i].label]), ['due', 'Due for review'], ['missed', 'Ever missed']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l} (${counts[v].toLocaleString()})</option>`).join('')}</select>
         <select id="b-sort">${[['global', 'Sort: hardest first'], ['easiest', 'Sort: easiest first'], ['accuracy', 'Sort: your worst first'], ['recent', 'Sort: recently played'], ['id', 'Sort: puzzle ID']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input id="b-q" placeholder="Search ID or theme" value="${esc(browseState.q)}" size="16">
         <span>${list.length.toLocaleString()} puzzles</span>
@@ -965,7 +976,7 @@ function browseView(data, key) {
         <label>Collect into <select id="b-collect"><option value="">— off —</option>${customs.map((c) => `<option value="${esc(c.id)}"${c.id === browseState.collect ? ' selected' : ''}>${esc(c.name)} (${c.ids.length.toLocaleString()})</option>`).join('')}<option value="__new">+ New empty set…</option></select></label>
         ${target ? `<span>Click <b>+</b> on a puzzle to add it to "${esc(target.name)}", <b>✓</b> to remove it.${list.length ? ` ${solidButton({ label: `Add all ${list.length.toLocaleString()} shown`, color: '#2F3033', id: 'b-addall' })}` : ''}</span>` : '<span class="muted">Pick a custom set to handpick puzzles into it.</span>'}
       </div>
-      <div class="legend">${[['mastered', 'Mastered', 'reached the 7-day review stage'], ['progress', 'In progress', 'answered correctly, not mastered yet'], ['learning', 'Learning', 'missed last time'], ['new', 'New', 'never seen']].map(([k, label, tip]) => `<button class="legend-item${f === k ? ' active' : ''}" data-filter="${k}" title="${tip}"><span class="st-badge st-${k}">${label}</span><b>${counts[k].toLocaleString()}</b></button>`).join('')}
+      <div class="legend">${[4, 3, 2, 1, 0].map((i) => TIERS[i]).map(({ key: k, label, tip }) => `<button class="legend-item${f === k ? ' active' : ''}" data-filter="${k}" title="${tip}"><span class="tier-badge t-${k}">${label}</span><b>${counts[k].toLocaleString()}</b></button>`).join('')}
         ${f !== 'all' ? '<button class="legend-item" data-filter="all">Show all</button>' : ''}</div>
       <div class="grid" id="grid"></div>
       <div class="pager">
@@ -982,12 +993,12 @@ function browseView(data, key) {
     const tile = document.createElement('a');
     tile.href = `#/puzzle/${encodeURIComponent(p.id)}`;
     const st = statusOf(r);
-    const label = { mastered: 'Mastered', progress: 'In progress', learning: 'Learning', new: 'New' }[st];
+    const label = TIERS[tierIndex(r)].label;
     const review = !r ? '' : r.b <= 1 ? 'retry now' : r.d <= now ? 'review due' : `review in ${fmtInterval(r.d - now)}`;
-    tile.className = `tile st-${st}`;
+    tile.className = `tile t-${st}`;
     tile.innerHTML = `${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
-      <div class="meta"><span class="st-badge st-${st}">${label}</span><span title="Hardness rank within ${p.rating}★">${mixed ? `${p.rating}★ ` : ''}${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
+      <div class="meta"><span class="tier-badge t-${st}">${label}</span><span title="Hardness rank within ${p.rating}★">${mixed ? `${p.rating}★ ` : ''}${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
       <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${globalLabel(p)}</span></div>`;
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({ board: d.board, level: s.level });
     tile.querySelector('.collect-btn')?.addEventListener('click', (e) => {
@@ -1170,6 +1181,8 @@ function renderSummary(data, session) {
   const pct = session.done ? Math.round((session.correct / session.done) * 100) : 0;
   const misses = [...session.misses];
   const missLog = misses.map((id) => (session.log || []).find((e) => e.id === id && !e.correct)).filter(Boolean);
+  const tierMoves = { up: 0, down: 0 };
+  for (const e of session.log || []) if (e.tb !== undefined && e.ta !== undefined) { if (e.ta > e.tb && (e.tb > 0 || e.correct)) tierMoves.up++; else if (e.ta < e.tb) tierMoves.down++; }
   const root = setView(`
     ${outlineButton('Exit', 'leave-fullscreen-button', 'exit')}
     <div class="content summary-page">
@@ -1184,6 +1197,8 @@ function renderSummary(data, session) {
           <div class="summary-chip"><span class="v">${pct}%</span><span class="k">first-try accuracy</span></div>
           <div class="summary-chip"><span class="v">${session.bestStreak}</span><span class="k">best streak</span></div>
           <div class="summary-chip"><span class="v">${misses.length}</span><span class="k">puzzles missed</span></div>
+          ${tierMoves.up + tierMoves.down ? `<div class="summary-chip"><span class="v tier-up">▲ ${tierMoves.up}</span><span class="k">tiers up</span></div>
+          <div class="summary-chip"><span class="v tier-down">▼ ${tierMoves.down}</span><span class="k">tiers down</span></div>` : ''}
         </div>` : `<p class="engine-note" style="font-size:13px">${session.mode === 'mistakes' ? 'No mistakes to fix in this set.' : 'No puzzles are due right now. Raise "New puzzles per Learn session" in Settings or try a Perfect Run.'}</p>`}
         ${misses.length ? solidButton({ label: `Re-run ${misses.length} miss${misses.length === 1 ? '' : 'es'}`, color: '#B73C3C', stretch: true, id: 'rerun' }) : ''}
         ${session.mode !== 'single' ? solidButton({ label: session.mode === 'run' ? 'New run' : session.mode === 'through' ? (session.finished ? 'Start over' : 'Keep going') : 'Again', icon: 'assets/img/button-icons/new-puzzle.svg', color: '#54A165', stretch: true, id: 'again' }) : ''}
@@ -1256,7 +1271,7 @@ function statsView(data) {
     const sm = summarize(set.puzzles);
     return `<tr><td>${esc(set.kind === 'rating' ? `${set.rating}★ (default)` : set.name)}</td><td>${sm.total.toLocaleString()}</td><td>${sm.seen.toLocaleString()}</td>
       <td>${sm.mastered.toLocaleString()} <span class="muted">(${sm.total ? Math.round((sm.mastered / sm.total) * 1000) / 10 : 0}%)</span></td>
-      <td>${sm.attempts ? Math.round((sm.correct / sm.attempts) * 100) + '%' : '–'}</td></tr>`;
+      <td>${sm.attempts ? Math.round((sm.correct / sm.attempts) * 100) + '%' : '–'}</td><td class="tier-cell">${tierStrip(sm.tiers)}</td></tr>`;
   }).join('');
 
   const root = setView(`
@@ -1274,6 +1289,7 @@ function statsView(data) {
         <div class="summary-chip"><span class="v">${bestStreak()}</span><span class="k">best streak</span></div>
         <div class="summary-chip"><span class="v">${fmtMinutes(tot.t)}</span><span class="k">time drilling</span></div>
       </div>
+      <div class="stats-tiers">${tierBar(allSum.tiers)}</div>
 
       <div class="panel chart-panel">
         <div class="chart-head"><h4>Puzzles per day</h4><span class="muted">last 30 days</span>
@@ -1293,7 +1309,7 @@ function statsView(data) {
 
       <div class="panel">
         <h4>Your sets</h4>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Set</th><th>Puzzles</th><th>Seen</th><th>Mastered</th><th>Accuracy</th></tr></thead><tbody>${setRows}</tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Set</th><th>Puzzles</th><th>Seen</th><th>Mastered</th><th>Accuracy</th><th>Tiers</th></tr></thead><tbody>${setRows}</tbody></table></div>
       </div>
     </div>`, 'scroll');
   root.querySelector('#exit').onclick = () => go('#/');

@@ -69,16 +69,36 @@ test('cramming a puzzle before it is due does not promote it', () => {
   assert.equal(P.getRec('a').c, 3); // still counted as correct answers
 });
 
-test('a miss sends the puzzle back to the start, due immediately', () => {
+test('a miss drops one tier: Mastered -> Proficient -> Familiar -> Attempted', () => {
   P.record('a', true); advance(DAY); P.record('a', true); advance(3 * DAY); P.record('a', true);
-  assert.equal(P.isMastered(P.getRec('a')), true);
-  const r = P.record('a', false, 9000, 2);
-  assert.equal(r.b, 1);
-  assert.equal(r.d, now);
+  assert.equal(P.tierOf(P.getRec('a')).key, 'mastered');
+  let r = P.record('a', false, 9000, 2);
+  assert.equal(P.tierOf(r).key, 'proficient');
+  assert.equal(r.b, 3);
+  assert.equal(r.d, now + DAY); // back for review tomorrow
   assert.equal(r.st, 0);
   assert.equal(r.w, 2);
   assert.equal(P.isMastered(r), false);
-  assert.equal(P.isDue(r), true);
+  assert.equal(P.isDue(r), false);
+  r = P.record('a', false); assert.equal(P.tierOf(r).key, 'familiar');
+  r = P.record('a', false); assert.equal(P.tierOf(r).key, 'attempted');
+  assert.equal(r.d, now); assert.equal(P.isDue(r), true); // re-asked right away
+  r = P.record('a', false); assert.equal(P.tierOf(r).key, 'attempted');
+});
+
+test('after a drop, re-answering in the same sitting does not climb back; the next day does', () => {
+  P.record('a', true); advance(DAY); P.record('a', true); advance(3 * DAY); P.record('a', true);
+  P.record('a', false);                       // Mastered -> Proficient
+  P.record('a', true);                        // same sitting: not due, stays Proficient
+  assert.equal(P.tierOf(P.getRec('a')).key, 'proficient');
+  advance(DAY); P.record('a', true);          // next day: back to Mastered
+  assert.equal(P.tierOf(P.getRec('a')).key, 'mastered');
+});
+
+test('a first-ever miss is Attempted; never played is Not started', () => {
+  assert.equal(P.tierOf(P.getRec('n')).key, 'new');
+  assert.equal(P.tierOf(P.record('n', false)).key, 'attempted');
+  assert.equal(P.tierOf(P.record('m', true)).key, 'familiar');
 });
 
 test('summarize counts seen, mastered, due and learning', () => {
@@ -93,6 +113,7 @@ test('summarize counts seen, mastered, due and learning', () => {
   assert.equal(s.mastered, 1);
   assert.equal(s.learning, 1);
   assert.equal(s.due, 1);
+  assert.deepEqual(s.tiers, [2, 1, 1, 0, 1]); // not started, attempted, familiar, proficient, mastered
 });
 
 // ---------------- backup ----------------
@@ -389,4 +410,16 @@ test('Play Through starts over after a finished pass, and positions are per set'
   const again = createSession('through', 4, list, { setKey: 'cZ' });
   assert.equal(again.remaining(), 3);
   assert.equal(throughStatus('cOther', list).left, 3);
+});
+
+test('set rules can filter by tier', () => {
+  const ps = puzzles(4);
+  const data = { byRating: new Map([[4, ps]]), rankedByRating: rankByDifficulty(new Map([[4, ps]])), byId: new Map(ps.map((p) => [p.id, p])) };
+  P.record('p1', true);                                   // familiar
+  P.record('p2', true); advance(DAY); P.record('p2', true); // proficient
+  P.record('p3', false);                                  // attempted
+  const ids = (status) => S.evaluateRule(data, { ...S.DEFAULT_RULE, ratings: [4], difficulty: { type: 'topPct', pct: 100 }, status }).map((p) => p.id).sort();
+  assert.deepEqual(ids('familiar'), ['p1']);
+  assert.deepEqual(ids('proficient'), ['p2']);
+  assert.deepEqual(ids('learning'), ['p3']);
 });

@@ -6,6 +6,10 @@
 //   A correct answer only promotes a puzzle when it is due (or new), so cramming the same
 //   puzzle repeatedly in one sitting does not count as long-term memorization.
 //   "Mastered" = box >= 4 (solved correctly on reviews spaced at least 3 days apart).
+//
+// Tiers (as on Khan Academy): Not started -> Attempted (box 0-1) -> Familiar (box 2) -> Proficient (box 3)
+//   -> Mastered (box 4+). A miss drops ONE tier (Mastered -> Proficient -> Familiar -> Attempted) and brings the
+//   puzzle back for review the next day; Attempted puzzles are re-asked right away.
 
 const KEY = 'pd.progress.v1';
 const SETTINGS_KEY = 'pd.settings.v1';
@@ -47,6 +51,17 @@ function scheduleSave() {
 }
 window.addEventListener('beforeunload', () => { clearTimeout(saveTimer); safeSet(KEY, progress); });
 
+export const TIERS = [
+  { key: 'new', label: 'Not started', tip: 'never played' },
+  { key: 'attempted', label: 'Attempted', tip: 'played, not solved since the last miss' },
+  { key: 'familiar', label: 'Familiar', tip: 'solved once; next review in a day' },
+  { key: 'proficient', label: 'Proficient', tip: 'solved again on a later day; next review in 3 days' },
+  { key: 'mastered', label: 'Mastered', tip: 'solved on reviews spaced 3+ days apart' },
+];
+/** 0 not started, 1 attempted, 2 familiar, 3 proficient, 4 mastered */
+export const tierIndex = (rec) => (!rec ? 0 : rec.b <= 1 ? 1 : rec.b === 2 ? 2 : rec.b === 3 ? 3 : 4);
+export const tierOf = (rec) => TIERS[tierIndex(rec)];
+
 export const getRec = (id) => progress[id];
 export const isDue = (rec, now = Date.now()) => !rec || rec.b <= 1 || rec.d <= now;
 export const isMastered = (rec) => !!rec && rec.b >= MASTERED_BOX;
@@ -70,8 +85,9 @@ export function record(id, correct, ms, wrongIndex) {
     delete rec.w;
   } else {
     rec.st = 0;
-    rec.b = 1;
-    rec.d = now;
+    // Drop one tier: Mastered -> Proficient, Proficient -> Familiar, Familiar (or new) -> Attempted
+    rec.b = rec.b >= MASTERED_BOX ? 3 : rec.b === 3 ? 2 : 1;
+    rec.d = rec.b === 1 ? now : now + INTERVALS[2]; // Attempted: re-ask now; otherwise review again tomorrow
     if (wrongIndex !== undefined) rec.w = wrongIndex;
   }
   progress[id] = rec;
@@ -87,8 +103,10 @@ export const progressCount = () => Object.keys(progress).length;
 // ---------- summaries ----------
 export function summarize(puzzles, now = Date.now()) {
   let seen = 0, mastered = 0, due = 0, learning = 0, attempts = 0, correct = 0, perfect = 0;
+  const tiers = [0, 0, 0, 0, 0];
   for (const p of puzzles) {
     const r = progress[p.id];
+    tiers[tierIndex(r)]++;
     if (!r) continue;
     seen++;
     attempts += r.n; correct += r.c;
@@ -97,7 +115,7 @@ export function summarize(puzzles, now = Date.now()) {
     if (r.b >= 2 && r.d <= now) due++;
     if (r.n > 0 && r.c === r.n) perfect++;
   }
-  return { total: puzzles.length, seen, mastered, due, learning, attempts, correct, perfect };
+  return { total: puzzles.length, seen, mastered, due, learning, attempts, correct, perfect, tiers };
 }
 
 // ---------- daily stats ----------

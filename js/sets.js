@@ -10,7 +10,8 @@ const write = (sets) => { try { localStorage.setItem(SETS_KEY, JSON.stringify(se
 export const THEMES = ['CLEAN', 'OVERHANG', 'BURN', 'DIG', 'SPIRE'];
 export const STATUS_OPTIONS = [
   ['any', 'Any'], ['notMastered', 'Not mastered yet'], ['new', 'Never seen'],
-  ['missed', 'Missed at least once'], ['learning', 'Missed last time'], ['mastered', 'Mastered'],
+  ['missed', 'Missed at least once'], ['learning', 'Attempted (not solved since a miss)'], ['familiar', 'Familiar'],
+  ['proficient', 'Proficient'], ['mastered', 'Mastered'],
 ];
 
 // ---------- storage ----------
@@ -91,6 +92,8 @@ const statusTest = {
   new: (r) => !r,
   missed: (r) => !!r && r.c < r.n,
   learning: (r) => !!r && r.b <= 1,
+  familiar: (r) => !!r && r.b === 2,
+  proficient: (r) => !!r && r.b === 3,
   mastered: (r) => !!r && r.b >= MASTERED_BOX,
 };
 
