@@ -9,7 +9,7 @@ import { createSession, MODES, orderNew, throughStatus, resetThrough } from './s
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, resetProgress,
   exportProgress, importProgress, lastBackup, progressCount,
-  getDailyAll, bestStreak, snapshotSets, getHistory, dayKey, TIERS, tierIndex,
+  getDailyAll, bestStreak, snapshotSets, getHistory, dayKey, TIERS, tierIndex, isDue, daysUntilDue,
 } from './progress.js';
 import { PUZZLE_THEME_TEXT } from './core.js';
 
@@ -72,14 +72,9 @@ function play(name) {
   } catch { /* ignore */ }
 }
 
-function fmtInterval(ms) {
-  if (ms <= 0) return 'now';
-  const days = ms / 86400000;
-  if (days >= 0.95) return `${Math.round(days)} day${Math.round(days) === 1 ? '' : 's'}`;
-  const h = ms / 3600000;
-  if (h >= 1) return `${Math.round(h)} h`;
-  return `${Math.max(1, Math.round(ms / 60000))} min`;
-}
+/** "now" / "tomorrow" / "in N days" until a puzzle's next review day. */
+const reviewIn = (r, now = Date.now()) => { const n = daysUntilDue(r, now); return n <= 0 ? 'now' : n === 1 ? 'tomorrow' : `in ${n} days`; };
+
 
 // ---------- view lifecycle ----------
 let cleanups = [];
@@ -180,7 +175,7 @@ function homeView(data) {
   }[contMode];
   const t = daily.today;
   const todayLine = t.n
-    ? `Today: <b>${t.n}</b> puzzle${t.n === 1 ? '' : 's'} · ${Math.round((t.c / t.n) * 100)}% correct${t.f ? ` · ${t.f} new` : ''}${t.t ? ` · ${fmtMinutes(t.t)}` : ''}${daily.streak > 1 ? ` · ${daily.streak}-day streak` : ''}`
+    ? `Today: <b>${t.n}</b> puzzle${t.n === 1 ? '' : 's'} · ${Math.round((t.c / t.n) * 100)}% correct${t.u ? ` · <span class="tier-up">▲ ${t.u} tier${t.u === 1 ? '' : 's'} up</span>` : ''}${t.f ? ` · ${t.f} new` : ''}${t.t ? ` · ${fmtMinutes(t.t)}` : ''}${daily.streak > 1 ? ` · ${daily.streak}-day streak` : ''}`
     : `Nothing yet today${daily.streak ? ` · keep your ${daily.streak}-day streak going` : ''}`;
   const showIntro = !s.introDone && progressCount() === 0;
 
@@ -674,9 +669,10 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
     const ms = performance.now() - state.start;
     const idx = matchSubmission(state.dec.moves, sub?.first, sub?.second);
     const correct = idx === 0;
-    state.tierBefore = undefined;
+    state.tierBefore = undefined; state.wasDue = undefined;
     if (!state.isRetry) {
       state.tierBefore = tierIndex(getRec(state.p.id));
+      state.wasDue = isDue(getRec(state.p.id));
       state.recRes = record(state.p.id, correct, ms, correct ? undefined : idx);
       session.result(state.p, correct);
       (session.log ||= []).push({
@@ -722,7 +718,9 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         ${rec?.bt ? `<div class="stat"><h1>Your best time</h1><p>${(rec.bt / 1000).toFixed(1)}s</p></div>` : ''}
         <div class="stat"><h1>Tier</h1><p>${tierBadge(tierIndex(rec))}${solved && state.tierBefore !== undefined && state.tierBefore !== tierIndex(rec) && (state.tierBefore > 0 || state.idx === 0)
           ? `<span class="tier-change ${tierIndex(rec) > state.tierBefore ? 'up' : 'down'}">${tierIndex(rec) > state.tierBefore ? '▲' : '▼'} from ${TIERS[state.tierBefore].label}</span>` : ''}</p></div>
-        <div class="stat"><h1>Next review</h1><p>${!rec ? '–' : rec.b <= 1 ? 'this session' : rec.d <= Date.now() ? 'now' : `in ${fmtInterval(rec.d - Date.now())}`}</p></div>
+        <div class="stat"><h1>Next review</h1><p>${!rec ? '–' : rec.b <= 1 ? 'this session' : reviewIn(rec)}</p></div>
+        ${solved && state.idx === 0 && state.tierBefore > 0 && state.wasDue === false
+          ? `<p class="engine-note practice-note">Correct! This one is next due ${reviewIn(rec)}, so this answer is practice: tiers only move up on a review after time away.</p>` : ''}
       </div>`;
 
     const engineRows = dec.moves.map((m, i) => `
@@ -937,7 +935,7 @@ function browseView(data, key) {
     familiar: (x) => statusOf(x.r) === 'familiar',
     attempted: (x) => statusOf(x.r) === 'attempted',
     new: (x) => !x.r,
-    due: (x) => x.r && x.r.b >= 2 && x.r.d <= now,
+    due: (x) => x.r && x.r.b >= 2 && isDue(x.r, now),
     missed: (x) => x.r && x.r.c < x.r.n,
   };
   const counts = Object.fromEntries(Object.entries(tests).map(([k, t]) => [k, withRec.filter(t).length]));
@@ -994,7 +992,7 @@ function browseView(data, key) {
     tile.href = `#/puzzle/${encodeURIComponent(p.id)}`;
     const st = statusOf(r);
     const label = TIERS[tierIndex(r)].label;
-    const review = !r ? '' : r.b <= 1 ? 'retry now' : r.d <= now ? 'review due' : `review in ${fmtInterval(r.d - now)}`;
+    const review = !r ? '' : r.b <= 1 ? 'retry now' : isDue(r, now) ? 'review due' : `review ${reviewIn(r, now)}`;
     tile.className = `tile t-${st}`;
     tile.innerHTML = `${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
@@ -1181,6 +1179,9 @@ function renderSummary(data, session) {
   const pct = session.done ? Math.round((session.correct / session.done) * 100) : 0;
   const misses = [...session.misses];
   const missLog = misses.map((id) => (session.log || []).find((e) => e.id === id && !e.correct)).filter(Boolean);
+  // After Learn, offer another batch of new puzzles straight away (the per-session cap is just a default)
+  const unseenLeft = session.mode === 'learn' && session.set ? session.set.puzzles.filter((p) => !getRec(p.id)).length : 0;
+  const moreNew = Math.min(getSettings().newPerSession, unseenLeft);
   const tierMoves = { up: 0, down: 0 };
   for (const e of session.log || []) if (e.tb !== undefined && e.ta !== undefined) { if (e.ta > e.tb && (e.tb > 0 || e.correct)) tierMoves.up++; else if (e.ta < e.tb) tierMoves.down++; }
   const root = setView(`
@@ -1199,8 +1200,9 @@ function renderSummary(data, session) {
           <div class="summary-chip"><span class="v">${misses.length}</span><span class="k">puzzles missed</span></div>
           ${tierMoves.up + tierMoves.down ? `<div class="summary-chip"><span class="v tier-up">▲ ${tierMoves.up}</span><span class="k">tiers up</span></div>
           <div class="summary-chip"><span class="v tier-down">▼ ${tierMoves.down}</span><span class="k">tiers down</span></div>` : ''}
-        </div>` : `<p class="engine-note" style="font-size:13px">${session.mode === 'mistakes' ? 'No mistakes to fix in this set.' : 'No puzzles are due right now. Raise "New puzzles per Learn session" in Settings or try a Perfect Run.'}</p>`}
+        </div>` : `<p class="engine-note" style="font-size:13px">${session.mode === 'mistakes' ? 'No mistakes to fix in this set.' : `No puzzles are due right now. ${moreNew ? 'Learn some new ones below, or try a Perfect Run.' : 'Try a Perfect Run.'}`}</p>`}
         ${misses.length ? solidButton({ label: `Re-run ${misses.length} miss${misses.length === 1 ? '' : 'es'}`, color: '#B73C3C', stretch: true, id: 'rerun' }) : ''}
+        ${moreNew ? solidButton({ label: `Learn ${moreNew} more new`, icon: 'assets/img/button-icons/new-puzzle.svg', color: '#3C5EB7', stretch: true, id: 'more-new' }) : ''}
         ${session.mode !== 'single' ? solidButton({ label: session.mode === 'run' ? 'New run' : session.mode === 'through' ? (session.finished ? 'Start over' : 'Keep going') : 'Again', icon: 'assets/img/button-icons/new-puzzle.svg', color: '#54A165', stretch: true, id: 'again' }) : ''}
         ${solidButton({ label: 'Home', color: '#3C5EB7', stretch: true, id: 'home' })}
       </div>
@@ -1237,6 +1239,7 @@ function renderSummary(data, session) {
     if (session.mode === 'through' && session.finished) resetThrough(key);
     playView(data, session.mode, key);
   });
+  root.querySelector('#more-new')?.addEventListener('click', () => playView(data, 'learn', session.set.key, { newLimit: moreNew }));
   root.querySelector('#rerun')?.addEventListener('click', () => {
     const pool = misses.map((id) => data.byId.get(id)).filter(Boolean);
     const s2 = createSession('run', session.rating, pool, { ids: misses });
@@ -1319,8 +1322,8 @@ function statsView(data) {
     label: short(d), value: v.n,
     tip: `<b>${short(d)}</b><br>${v.n} puzzles · ${v.c} correct${v.f ? ` · ${v.f} new` : ''}${v.t ? `<br>${fmtMinutes(v.t)}` : ''}`,
   })), { empty: 'No puzzles yet. Your daily activity will show up here.' });
-  root.querySelector('#table-days').innerHTML = `<table class="data-table"><thead><tr><th>Day</th><th>Puzzles</th><th>Correct</th><th>New</th><th>Time</th></tr></thead><tbody>${
-    perDay.filter(({ v }) => v.n).reverse().map(({ d, v }) => `<tr><td>${short(d)}</td><td>${v.n}</td><td>${v.c} (${Math.round((v.c / v.n) * 100)}%)</td><td>${v.f || 0}</td><td>${fmtMinutes(v.t)}</td></tr>`).join('') || '<tr><td colspan="5">No activity yet</td></tr>'}</tbody></table>`;
+  root.querySelector('#table-days').innerHTML = `<table class="data-table"><thead><tr><th>Day</th><th>Puzzles</th><th>Correct</th><th>New</th><th>Tiers ▲</th><th>Time</th></tr></thead><tbody>${
+    perDay.filter(({ v }) => v.n).reverse().map(({ d, v }) => `<tr><td>${short(d)}</td><td>${v.n}</td><td>${v.c} (${Math.round((v.c / v.n) * 100)}%)</td><td>${v.f || 0}</td><td>${v.u || 0}</td><td>${fmtMinutes(v.t)}</td></tr>`).join('') || '<tr><td colspan="6">No activity yet</td></tr>'}</tbody></table>`;
   root.querySelector('#toggle-table').onclick = (e) => {
     const t = root.querySelector('#table-days'), c = root.querySelector('#chart-days');
     const showTable = t.hidden;

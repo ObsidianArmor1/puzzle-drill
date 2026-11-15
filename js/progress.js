@@ -64,7 +64,21 @@ export const tierIndex = (rec) => (!rec ? 0 : rec.b <= 1 ? 1 : rec.b === 2 ? 2 :
 export const tierOf = (rec) => TIERS[tierIndex(rec)];
 
 export const getRec = (id) => progress[id];
-export const isDue = (rec, now = Date.now()) => !rec || rec.b <= 1 || rec.d <= now;
+// Reviews go by day, not by the hour: a review day starts at ROLLOVER_HOUR local time (so a late-night session still
+// counts as that day), and a puzzle scheduled for a day is due from the start of that day, however late you played.
+export const ROLLOVER_HOUR = 4;
+/** Start (ROLLOVER_HOUR local) of the review day containing ts. */
+export function dayStart(ts = Date.now()) {
+  const d = new Date(ts - ROLLOVER_HOUR * 3600000);
+  d.setHours(ROLLOVER_HOUR, 0, 0, 0);
+  return d.getTime();
+}
+const addDays = (ts, n) => { const d = new Date(ts); d.setDate(d.getDate() + n); return d.getTime(); };
+/** Start of the review day `days` days after today's. */
+export const reviewDay = (days, now = Date.now()) => addDays(dayStart(now), days);
+export const isDue = (rec, now = Date.now()) => !rec || rec.b <= 1 || rec.d < addDays(dayStart(now), 1);
+/** Whole review days until a puzzle is due (0 = due today). */
+export const daysUntilDue = (rec, now = Date.now()) => (isDue(rec, now) ? 0 : Math.round((dayStart(rec.d) - dayStart(now)) / DAY));
 export const isMastered = (rec) => !!rec && rec.b >= MASTERED_BOX;
 
 export function record(id, correct, ms, wrongIndex) {
@@ -72,6 +86,7 @@ export function record(id, correct, ms, wrongIndex) {
   const isNew = !progress[id];
   const rec = progress[id] || { n: 0, c: 0, st: 0, b: 0, d: 0, l: 0 };
   const wasDue = isDue(rec, now);
+  const tierBefore = isNew ? 0 : tierIndex(rec);
   rec.n++;
   rec.l = now;
   rec.ok = correct;
@@ -81,19 +96,22 @@ export function record(id, correct, ms, wrongIndex) {
     if (ms && (!rec.bt || ms < rec.bt)) rec.bt = Math.round(ms);
     if (wasDue) {
       rec.b = Math.max(2, Math.min(rec.b + 1, INTERVALS.length - 1));
-      rec.d = now + INTERVALS[rec.b];
+      rec.d = reviewDay(Math.round(INTERVALS[rec.b] / DAY), now);
     }
     delete rec.w;
   } else {
     rec.st = 0;
     // Drop one tier: Mastered -> Solid, Solid -> Familiar, Familiar (or new) -> Learning
     rec.b = rec.b >= MASTERED_BOX ? 3 : rec.b === 3 ? 2 : 1;
-    rec.d = rec.b === 1 ? now : now + INTERVALS[2]; // Learning: re-ask now; otherwise review again tomorrow
+    rec.d = rec.b === 1 ? now : reviewDay(1, now); // Learning: re-ask now; otherwise review again tomorrow
     if (wrongIndex !== undefined) rec.w = wrongIndex;
   }
   progress[id] = rec;
   scheduleSave();
-  bumpDaily(correct, isNew, ms);
+  // Tier moves for the day's tally (a first-ever miss, New -> Learning, isn't a step up)
+  const tierAfter = tierIndex(rec);
+  const move = tierAfter > tierBefore && (tierBefore > 0 || correct) ? 1 : tierAfter < tierBefore ? -1 : 0;
+  bumpDaily(correct, isNew, ms, move);
   return rec;
 }
 
@@ -113,27 +131,30 @@ export function summarize(puzzles, now = Date.now()) {
     attempts += r.n; correct += r.c;
     if (r.b >= MASTERED_BOX) mastered++;
     if (r.b === 1) learning++;
-    if (r.b >= 2 && r.d <= now) due++;
+    if (r.b >= 2 && isDue(r, now)) due++;
     if (r.n > 0 && r.c === r.n) perfect++;
   }
   return { total: puzzles.length, seen, mastered, due, learning, attempts, correct, perfect, tiers };
 }
 
 // ---------- daily stats ----------
-// Keyed by the player's local date. Per day: n answered, c correct, f first-time puzzles, t ms spent.
+// Keyed by the player's local date. Per day: n answered, c correct, f first-time puzzles, t ms spent,
+// u tiers gained, dn tiers lost.
 const HISTORY_KEY = 'pd.history.v1';
 export const dayKey = (date = Date.now()) => {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const today = () => dayKey();
-function bumpDaily(correct, isNew, ms) {
+function bumpDaily(correct, isNew, ms, move = 0) {
   const d = safeGet(DAILY_KEY, {});
   const k = today();
   d[k] = d[k] || { n: 0, c: 0 };
   d[k].n++; if (correct) d[k].c++;
   if (isNew) d[k].f = (d[k].f || 0) + 1;
   if (ms) d[k].t = (d[k].t || 0) + Math.min(ms, 120000);
+  if (move > 0) d[k].u = (d[k].u || 0) + 1;
+  if (move < 0) d[k].dn = (d[k].dn || 0) + 1;
   safeSet(DAILY_KEY, d);
 }
 export const getDailyAll = () => safeGet(DAILY_KEY, {});

@@ -10,6 +10,8 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
   Every puzzle has a **tier** saying how firmly you hold it: *New* → *Learning* → *Familiar* (right recently; next review in a day) → *Solid* (held overnight; 3 days) → *Mastered* (held across days; 7 days and up).
   A miss drops a puzzle **one tier** (Mastered → Solid → Familiar → Learning) and brings it back the next day; Learning puzzles are re-asked in the same session.
   Tiers show on the solution screen (with ▲/▼ when one changes), on Browse tiles, as a bar under each set on the home page, in the session summary, and on the Progress page.
+  Reviews go by **day**, not by the hour: a review scheduled for tomorrow is due from 4am tomorrow (local time), however late you played today. Getting a puzzle right before it's due is practice: the solution screen says so, and its tier doesn't move (only a correct answer after time away proves you remember it).
+  Practising a lot still shows: each day counts the tiers you gained (home page and the Progress table), and after Learn a **Learn N more new** button starts another batch straight away.
   New puzzles come **hardest first** by default, so Learn works its way down the set by difficulty (changeable to easiest first or random in Settings).
 - **Perfect Run**: N puzzles in a row, aiming for zero mistakes. Afterwards, *Re-run misses* until the set is clean.
 - **Play Through**: every puzzle in the set exactly once, in order (a star set goes hardest first; a custom or shared set keeps its own order). Stop any time and it resumes where you left off; when you've played them all it shows your score and **Start over** begins a new pass.

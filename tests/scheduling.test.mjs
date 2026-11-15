@@ -36,11 +36,13 @@ beforeEach(() => {
 const puzzles = (n, ranked = true) => Array.from({ length: n }, (_, i) => ({ id: `p${i + 1}`, rating: 4, ...(ranked ? { hardRank: i + 1, successRate: (i + 1) / (n + 1) } : {}) }));
 
 // ---------------- spaced repetition ----------------
-test('first correct answer schedules a review in 1 day', () => {
+test('first correct answer schedules a review for the next review day', () => {
   const r = P.record('a', true, 3000);
   assert.equal(r.b, 2);
-  assert.equal(r.d, now + DAY);
+  assert.equal(r.d, P.reviewDay(1, now));
   assert.equal(P.isDue(r), false);
+  advance(P.reviewDay(1, now) - now);
+  assert.equal(P.isDue(r), true);
 });
 
 test('reviews step through 1, 3, 7, 16, 35 days when answered on time', () => {
@@ -49,7 +51,7 @@ test('reviews step through 1, 3, 7, 16, 35 days when answered on time', () => {
     advance(P.getRec('a').d - now); // wait until due
     const r = P.record('a', true);
     assert.equal(r.b, box);
-    assert.equal(r.d, now + days * DAY);
+    assert.equal(r.d, P.reviewDay(days, now));
   }
 });
 
@@ -75,7 +77,7 @@ test('a miss drops one tier: Mastered -> Proficient -> Familiar -> Attempted', (
   let r = P.record('a', false, 9000, 2);
   assert.equal(P.tierOf(r).key, 'proficient');
   assert.equal(r.b, 3);
-  assert.equal(r.d, now + DAY); // back for review tomorrow
+  assert.equal(r.d, P.reviewDay(1, now)); // back for review tomorrow
   assert.equal(r.st, 0);
   assert.equal(r.w, 2);
   assert.equal(P.isMastered(r), false);
@@ -422,4 +424,33 @@ test('set rules can filter by tier', () => {
   assert.deepEqual(ids('familiar'), ['p1']);
   assert.deepEqual(ids('proficient'), ['p2']);
   assert.deepEqual(ids('learning'), ['p3']);
+});
+
+test('reviews go by day: due from the 4am rollover, not 24 hours after you played', () => {
+  const evening = new Date(now); evening.setHours(21, 0, 0, 0); now = evening.getTime();
+  const r = P.record('late', true);
+  const nextDay = new Date(now); nextDay.setDate(nextDay.getDate() + 1);
+  nextDay.setHours(3, 59, 0, 0); now = nextDay.getTime();
+  assert.equal(P.isDue(r), false);            // 3:59am still counts as the day you played
+  nextDay.setHours(19, 0, 0, 0); now = nextDay.getTime();
+  assert.equal(P.isDue(r), true);             // 7pm next day: due, though only 22 hours later
+  assert.equal(P.daysUntilDue(r), 0);
+  assert.equal(P.tierOf(P.record('late', true)).key, 'proficient');
+});
+
+test('daily tally counts tiers gained and lost', () => {
+  P.record('u1', true);                      // New -> Familiar: up
+  P.record('u2', false);                     // first-ever miss: not an up
+  P.record('u3', true); advance(DAY); P.record('u3', true); advance(3 * DAY); P.record('u3', true); // ... Mastered
+  P.record('u3', false);                     // Mastered -> Solid: down
+  const t = P.getDaily().today;
+  assert.equal(t.dn, 1);
+  assert.ok(t.u >= 1);
+});
+
+test('Learn can take a larger batch of new puzzles than the setting', () => {
+  const ps = puzzles(30);
+  const s = createSession('learn', 4, ps, { newLimit: 25 });
+  let n = 0; for (let p; (p = s.next()); ) { s.result(p, true); n++; }
+  assert.equal(n, 25);
 });

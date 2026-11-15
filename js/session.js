@@ -56,14 +56,14 @@ class Session {
 
 // ---------- Learn (spaced repetition) ----------
 class LearnSession extends Session {
-  constructor(rating, puzzles) {
+  constructor(rating, puzzles, { newLimit } = {}) {
     super('learn', rating);
     const now = Date.now();
-    this.newLimit = getSettings().newPerSession;
+    this.newLimit = newLimit ?? getSettings().newPerSession;
     this.newUsed = 0;
     this.retries = []; // { p, at }  re-ask a missed puzzle after a few others
     this.learning = shuffle(puzzles.filter((p) => getRec(p.id)?.b === 1));
-    this.due = puzzles.filter((p) => { const r = getRec(p.id); return r && r.b >= 2 && r.d <= now; })
+    this.due = puzzles.filter((p) => { const r = getRec(p.id); return r && r.b >= 2 && isDue(r, now); })
       .sort((a, b) => getRec(a.id).d - getRec(b.id).d);
     this.fresh = orderNew(puzzles.filter((p) => !getRec(p.id)), getSettings().newOrder);
     this.unsolvedOld = shuffle(puzzles.filter((p) => { const r = getRec(p.id); return r && r.b === 0; }));
@@ -239,7 +239,7 @@ class SingleSession extends Session {
 
 export function createSession(mode, rating, puzzles, opts = {}) {
   switch (mode) {
-    case 'learn': return new LearnSession(rating, puzzles);
+    case 'learn': return new LearnSession(rating, puzzles, opts);
     case 'run': return new RunSession(rating, puzzles, opts);
     case 'mistakes': return new MistakesSession(rating, puzzles);
     case 'through': return new ThroughSession(rating, puzzles, opts);
