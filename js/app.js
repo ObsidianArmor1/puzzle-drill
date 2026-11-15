@@ -43,7 +43,7 @@ function solidButton({ label, icon, color = '#3C5EB7', stretch = false, id, disa
     </button></span>`;
 }
 const outlineButton = (label, cls = '', id = '') => `<button class="outline-button prevent-select ${cls}"${id ? ` id="${id}"` : ''}><span class="label">${esc(label)}</span></button>`;
-// Tiers: badge, and a bar of how a set's puzzles split across tiers (Locked in first)
+// Tiers: badge, and a bar of how a set's puzzles split across tiers (Mastered first)
 const tierBadge = (i) => `<span class="tier-badge t-${TIERS[i].key}" title="${TIERS[i].tip}">${TIERS[i].label}</span>`;
 const tierStrip = (tiers) => `<div class="tier-bar">${[4, 3, 2, 1, 0].map((i) => tiers[i] ? `<span class="t-${TIERS[i].key}" style="flex:${tiers[i]}" title="${TIERS[i].label}: ${tiers[i].toLocaleString()}"></span>` : '').join('')}</div>`;
 const tierBar = (tiers) => {
@@ -142,7 +142,7 @@ function homeView(data) {
       ${head}
       <div class="count">${set.puzzles.length.toLocaleString()}</div>
       <div class="bar"><div class="m" style="width:${m}%"></div><div class="s" style="width:${Math.max(0, seen - m)}%"></div></div>
-      <div class="small">${sum.mastered.toLocaleString()} locked in · ${sum.seen.toLocaleString()} seen</div>
+      <div class="small">${sum.mastered.toLocaleString()} mastered · ${sum.seen.toLocaleString()} seen</div>
     </button>`;
   };
 
@@ -186,7 +186,7 @@ function homeView(data) {
 
   const modeHints = {
     learn: `${MODES.learn.description} ${sum ? `${sum.due + sum.learning} due, up to ${s.newPerSession} new${learnNext}.` : ''}`,
-    run: `${MODES.run.description} Picks ${Math.min(s.runSize, list.length)} from: ${{ unmastered: 'not locked in yet', random: 'the whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}.`,
+    run: `${MODES.run.description} Picks ${Math.min(s.runSize, list.length)} from: ${{ unmastered: 'not mastered yet', random: 'the whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}.`,
     mistakes: MODES.mistakes.description,
     endless: MODES.endless.description,
     through: `${MODES.through.description} ${through ? (through.left === 0 ? `Done: ${through.correct} / ${through.total} correct. Starting it again starts over.` : through.seen ? `${through.seen} / ${through.total} played, ${through.correct} correct.` : `${through.total} puzzles${sel?.kind === 'rating' ? ', hardest first' : ''}.`) : ''}`,
@@ -209,7 +209,7 @@ function homeView(data) {
         <ol>
           <li><b>Pick a set</b> from the Library below. 4★ is a good start.</li>
           <li><b>Press Start.</b> Learn shows the puzzles you're due to review, then new ones.</li>
-          <li><b>Come back daily.</b> Each correct answer pushes a puzzle's next review further out (1, 3, 7, 16, 35 days), from <b>Familiar</b> to <b>Solid</b> to <b>Locked in</b>.</li>
+          <li><b>Come back daily.</b> Each correct answer pushes a puzzle's next review further out (1, 3, 7, 16, 35 days), from <b>Familiar</b> to <b>Solid</b> to <b>Mastered</b>.</li>
         </ol>
         <p class="muted">Controls work like nestris.org: hover to move, click to place, Z/X to rotate.</p>
         ${solidButton({ label: 'Got it', color: '#2F3033', id: 'intro-done' })}
@@ -241,7 +241,7 @@ function homeView(data) {
         <p>${selInfo}</p>
         ${sel.kind === 'custom' && !list.length ? '<p>This set is empty. Open <b>Browse</b> on any set and use "Collect into" to handpick puzzles for it.</p>' : ''}
         ${sum ? `<div class="summary-row">
-          <div class="summary-chip"><span class="v">${Math.round((sum.mastered / sum.total) * 1000) / 10}%</span><span class="k">locked in</span></div>
+          <div class="summary-chip"><span class="v">${Math.round((sum.mastered / sum.total) * 1000) / 10}%</span><span class="k">mastered</span></div>
           <div class="summary-chip"><span class="v">${sum.due + sum.learning}</span><span class="k">due now</span></div>
           <div class="summary-chip"><span class="v">${(sum.total - sum.seen).toLocaleString()}</span><span class="k">never seen</span></div>
           <div class="summary-chip"><span class="v">${sum.attempts ? Math.round((sum.correct / sum.attempts) * 100) + '%' : '–'}</span><span class="k">accuracy</span></div>
@@ -394,7 +394,7 @@ function builderView(data, editId, fromKey) {
     const rates = result.filter((p) => p.successRate !== undefined).map((p) => p.successRate);
     const pc = (x) => `${Math.round(x * 100)}%`;
     $('#b-preview').innerHTML = `<p class="big-count"><b>${result.length.toLocaleString()}</b> puzzles</p>
-      <p>${rates.length ? `Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org. ` : ''}You've seen ${sum.seen.toLocaleString()} of them and locked in ${sum.mastered.toLocaleString()}; that progress carries over.</p>
+      <p>${rates.length ? `Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org. ` : ''}You've seen ${sum.seen.toLocaleString()} of them and mastered ${sum.mastered.toLocaleString()}; that progress carries over.</p>
       ${!handpicked ? '<p>The puzzle list is saved when you create the set. Use <b>Refresh</b> later to re-apply these rules.</p>' : ''}`;
   };
 
@@ -556,7 +556,7 @@ function receiveView(data, parse, source = 'link') {
         <p class="big-count"><b>${puzzles.length.toLocaleString()}</b> puzzles${byRating.length ? ` · ${byRating.map(([r, n]) => `${n.toLocaleString()} × ${r}★`).join(', ')}` : ''}</p>
         ${shared.rule ? `<p>Rules: ${esc(describeRule(shared.rule, PUZZLE_THEME_TEXT))}</p>` : ''}
         ${rates.length ? `<p>Solved by ${pc(Math.min(...rates))}–${pc(Math.max(...rates))} of players on nestris.org.</p>` : ''}
-        <p>You've already seen ${sum.seen.toLocaleString()} of these and locked in ${sum.mastered.toLocaleString()}; that progress carries over.</p>
+        <p>You've already seen ${sum.seen.toLocaleString()} of these and mastered ${sum.mastered.toLocaleString()}; that progress carries over.</p>
         ${shared.unknown ? `<p class="warn-text">${shared.unknown.toLocaleString()} puzzle(s) in this set aren't in the site's puzzle data and will be left out.</p>` : ''}
       </div>
       <div class="row builder-buttons">
@@ -1104,10 +1104,10 @@ function settingsView(data) {
           <label>Perfect Run size <input type="number" min="5" max="2000" id="set-run" value="${s.runSize}"></label>
           <label>Perfect Run picks from
             <select id="set-runpick" class="dark-select">
-              <option value="unmastered">not locked in yet</option><option value="random">the whole set</option><option value="seen">puzzles you have seen</option>
+              <option value="unmastered">not mastered yet</option><option value="random">the whole set</option><option value="seen">puzzles you have seen</option>
             </select></label>
         </div>
-        <p>Spaced repetition: a correct answer on a puzzle that's due schedules its next review in 1, 3, 7, 16, then 35 days. Puzzles move up through <b>Learning</b>, <b>Familiar</b> (1 day), <b>Solid</b> (3 days) and <b>Locked in</b> (7 days and up). A miss drops a puzzle one tier and brings it back the next day. Progress belongs to the puzzle, so it shows in every set that contains it.</p>
+        <p>Spaced repetition: a correct answer on a puzzle that's due schedules its next review in 1, 3, 7, 16, then 35 days. Puzzles move up through <b>Learning</b>, <b>Familiar</b> (1 day), <b>Solid</b> (3 days) and <b>Mastered</b> (7 days and up). A miss drops a puzzle one tier and brings it back the next day. Progress belongs to the puzzle, so it shows in every set that contains it.</p>
       </div>
       <div class="panel">
         <h4>Backup</h4>
@@ -1282,7 +1282,7 @@ function statsView(data) {
       <div class="summary-row">
         <div class="summary-chip"><span class="v">${tot.n.toLocaleString()}</span><span class="k">puzzles answered</span></div>
         <div class="summary-chip"><span class="v">${tot.n ? Math.round((tot.c / tot.n) * 100) + '%' : '–'}</span><span class="k">correct</span></div>
-        <div class="summary-chip"><span class="v">${allSum.mastered.toLocaleString()}</span><span class="k">locked in</span></div>
+        <div class="summary-chip"><span class="v">${allSum.mastered.toLocaleString()}</span><span class="k">mastered</span></div>
         <div class="summary-chip"><span class="v">${allSum.seen.toLocaleString()}</span><span class="k">puzzles seen</span></div>
         <div class="summary-chip"><span class="v">${keys.length}</span><span class="k">days practiced</span></div>
         <div class="summary-chip"><span class="v">${streak}</span><span class="k">day streak</span></div>
@@ -1302,14 +1302,14 @@ function statsView(data) {
         <div id="chart-acc" class="chart"></div>
       </div>
       <div class="panel chart-panel">
-        <div class="chart-head"><h4>Locked in over time</h4>
+        <div class="chart-head"><h4>Mastered over time</h4>
           <select id="m-set" class="dark-select">${lib.map((set) => `<option value="${esc(set.key)}"${set.key === sel?.key ? ' selected' : ''}>${esc(set.kind === 'rating' ? `${set.rating}★ (default)` : set.name)}</option>`).join('')}</select></div>
         <div id="chart-mastered" class="chart"></div>
       </div>
 
       <div class="panel">
         <h4>Your sets</h4>
-        <div class="table-wrap"><table class="data-table"><thead><tr><th>Set</th><th>Puzzles</th><th>Seen</th><th>Locked in</th><th>Accuracy</th><th>Tiers</th></tr></thead><tbody>${setRows}</tbody></table></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Set</th><th>Puzzles</th><th>Seen</th><th>Mastered</th><th>Accuracy</th><th>Tiers</th></tr></thead><tbody>${setRows}</tbody></table></div>
       </div>
     </div>`, 'scroll');
   root.querySelector('#exit').onclick = () => go('#/');
@@ -1340,12 +1340,12 @@ function statsView(data) {
     const pts = hk.map((k) => {
       const [m, seen, total] = history[k][key];
       const d = new Date(`${k}T12:00:00`);
-      return { label: short(d), value: m, tip: `<b>${short(d)}</b><br>${m.toLocaleString()} locked in · ${seen.toLocaleString()} seen of ${total.toLocaleString()}` };
+      return { label: short(d), value: m, tip: `<b>${short(d)}</b><br>${m.toLocaleString()} mastered · ${seen.toLocaleString()} seen of ${total.toLocaleString()}` };
     });
     const el = root.querySelector('#chart-mastered');
     if (pts.length < 2) {
       const cur = pts[0];
-      el.innerHTML = `<div class="chart-empty"><span class="hero">${cur ? cur.value.toLocaleString() : 0}</span> locked in today.<br>Tracking started ${hk[0] ? short(new Date(`${hk[0]}T12:00:00`)) : 'today'}; the line fills in as you come back on other days.</div>`;
+      el.innerHTML = `<div class="chart-empty"><span class="hero">${cur ? cur.value.toLocaleString() : 0}</span> mastered today.<br>Tracking started ${hk[0] ? short(new Date(`${hk[0]}T12:00:00`)) : 'today'}; the line fills in as you come back on other days.</div>`;
       return;
     }
     lineChart(el, pts, {});

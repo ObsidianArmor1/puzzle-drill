@@ -5,11 +5,11 @@
 //   box 2..6 = solved; next review after 1, 3, 7, 16, 35 days.
 //   A correct answer only promotes a puzzle when it is due (or new), so cramming the same
 //   puzzle repeatedly in one sitting does not count as long-term memorization.
-//   "Locked in" (internally "mastered") = box >= 4 (solved correctly on reviews spaced at least 3 days apart).
+//   "Mastered" = box >= 4 (solved correctly on reviews spaced at least 3 days apart).
 //
 // Tiers describe how firmly a puzzle is held, so they read the same whether you climbed or fell into one:
-//   New -> Learning (box 0-1) -> Familiar (box 2) -> Solid (box 3) -> Locked in (box 4+).
-//   A miss drops ONE tier (Locked in -> Solid -> Familiar -> Learning) and brings the puzzle back for review the next
+//   New -> Learning (box 0-1) -> Familiar (box 2) -> Solid (box 3) -> Mastered (box 4+).
+//   A miss drops ONE tier (Mastered -> Solid -> Familiar -> Learning) and brings the puzzle back for review the next
 //   day; Learning puzzles are re-asked right away. Keys stay new/attempted/familiar/proficient/mastered.
 
 const KEY = 'pd.progress.v1';
@@ -57,9 +57,9 @@ export const TIERS = [
   { key: 'attempted', label: 'Learning', tip: "you don't have it yet: it comes back this session" },
   { key: 'familiar', label: 'Familiar', tip: 'right recently, not proven overnight yet: next review in a day' },
   { key: 'proficient', label: 'Solid', tip: 'held overnight: next review in 3 days' },
-  { key: 'mastered', label: 'Locked in', tip: 'held across days: next review in a week or more' },
+  { key: 'mastered', label: 'Mastered', tip: 'held across days: next review in a week or more' },
 ];
-/** 0 new, 1 learning, 2 familiar, 3 solid, 4 locked in */
+/** 0 new, 1 learning, 2 familiar, 3 solid, 4 mastered */
 export const tierIndex = (rec) => (!rec ? 0 : rec.b <= 1 ? 1 : rec.b === 2 ? 2 : rec.b === 3 ? 3 : 4);
 export const tierOf = (rec) => TIERS[tierIndex(rec)];
 
@@ -86,7 +86,7 @@ export function record(id, correct, ms, wrongIndex) {
     delete rec.w;
   } else {
     rec.st = 0;
-    // Drop one tier: Locked in -> Solid, Solid -> Familiar, Familiar (or new) -> Learning
+    // Drop one tier: Mastered -> Solid, Solid -> Familiar, Familiar (or new) -> Learning
     rec.b = rec.b >= MASTERED_BOX ? 3 : rec.b === 3 ? 2 : 1;
     rec.d = rec.b === 1 ? now : now + INTERVALS[2]; // Learning: re-ask now; otherwise review again tomorrow
     if (wrongIndex !== undefined) rec.w = wrongIndex;
