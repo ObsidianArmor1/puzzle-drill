@@ -7,8 +7,8 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 
 - **Learn**: spaced repetition. Puzzles that are due come first, missed puzzles are asked again a few puzzles later, then up to N new puzzles are added (N is set in Settings).
   Correct answers on due puzzles schedule the next review in 1 → 3 → 7 → 16 → 35 days.
-  Every puzzle has a **tier**, like Khan Academy's skills: *Not started* → *Attempted* → *Familiar* (next review in a day) → *Proficient* (3 days) → *Mastered* (7 days and up).
-  A miss drops a puzzle **one tier** (Mastered → Proficient → Familiar → Attempted) and brings it back the next day; Attempted puzzles are re-asked in the same session.
+  Every puzzle has a **tier** saying how firmly you hold it: *New* → *Learning* → *Familiar* (right recently; next review in a day) → *Solid* (held overnight; 3 days) → *Locked in* (held across days; 7 days and up).
+  A miss drops a puzzle **one tier** (Locked in → Solid → Familiar → Learning) and brings it back the next day; Learning puzzles are re-asked in the same session.
   Tiers show on the solution screen (with ▲/▼ when one changes), on Browse tiles, as a bar under each set on the home page, in the session summary, and on the Progress page.
   New puzzles come **hardest first** by default, so Learn works its way down the set by difficulty (changeable to easiest first or random in Settings).
 - **Perfect Run**: N puzzles in a row, aiming for zero mistakes. Afterwards, *Re-run misses* until the set is clean.
@@ -18,7 +18,7 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 - **Browse**: every puzzle as a board thumbnail with your record on it. Click one to play it.
 
 **Sets & Library**: everything you drill is a set. The five star ratings come pre-installed as default sets, and you can add your own:
-- **From rules** (+ New set): pick star ratings, then *hardest N* / *hardest X%* / a difficulty range (ranked by how rarely players solve each puzzle on nestris.org), and optionally narrow by global success rate, theme (Stacking, Overhangs, Burns, Digging, Spires), your progress (new, not mastered, missed before…) and a size cap. A live preview shows how many puzzles match. The list is saved when you create the set; **Refresh** re-applies the rules later.
+- **From rules** (+ New set): pick star ratings, then *hardest N* / *hardest X%* / a difficulty range (ranked by how rarely players solve each puzzle on nestris.org), and optionally narrow by global success rate, theme (Stacking, Overhangs, Burns, Digging, Spires), your progress (new, not locked in, Familiar/Solid, missed before…) and a size cap. A live preview shows how many puzzles match. The list is saved when you create the set; **Refresh** re-applies the rules later.
 - **By hand**: in Browse, choose a set under *Collect into* and click **+** on puzzles; or use *Add this puzzle to a set* on the solution screen while drilling.
 
 **Sharing sets**: *Share* on a custom set gives a link and a downloadable set file. Sets built from rules travel as their rules (a short link that rebuilds the same puzzles, with Edit/Refresh intact). Handpicked sets, or rules that depend on your own progress or randomness, travel as 6-character puzzle codes; the page says if the link is too long for a Discord message, in which case send the file (recipient: *+ New set → Import a set file*). Opening a link or file shows a preview with *Add to library*.
@@ -34,7 +34,7 @@ Progress is stored per puzzle ID in each player's browser (localStorage), so upd
 ## Getting around
 
 - **Home**: a first-visit intro, a **Continue** card (your last mode on the selected set, with reviews due and today's numbers), the Library, and the modes.
-- **Progress** (top right): totals, puzzles and accuracy per day for the last 30 days (also as a table), mastered over time for any set (tracked from your first visit on), and a per-set table.
+- **Progress** (top right): totals, puzzles and accuracy per day for the last 30 days (also as a table), locked in over time for any set (tracked from your first visit on), and a per-set table.
 - **Settings** (top right): keybinds, timer, sound, session sizes, backup (export/import) and reset.
 - After a session, **Review your misses** shows each missed puzzle with the correct answer; click one to try it again.
 

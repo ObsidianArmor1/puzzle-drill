@@ -9,9 +9,9 @@ const write = (sets) => { try { localStorage.setItem(SETS_KEY, JSON.stringify(se
 
 export const THEMES = ['CLEAN', 'OVERHANG', 'BURN', 'DIG', 'SPIRE'];
 export const STATUS_OPTIONS = [
-  ['any', 'Any'], ['notMastered', 'Not mastered yet'], ['new', 'Never seen'],
-  ['missed', 'Missed at least once'], ['learning', 'Attempted (not solved since a miss)'], ['familiar', 'Familiar'],
-  ['proficient', 'Proficient'], ['mastered', 'Mastered'],
+  ['any', 'Any'], ['notMastered', 'Not locked in yet'], ['new', 'Never seen'],
+  ['missed', 'Missed at least once'], ['learning', 'Learning (not solved since a miss)'], ['familiar', 'Familiar'],
+  ['proficient', 'Solid'], ['mastered', 'Locked in'],
 ];
 
 // ---------- storage ----------
@@ -132,7 +132,7 @@ export function evaluateRule(data, rule) {
   return list;
 }
 
-/** Short human description of a rule, e.g. "Hardest 100 of 4★ · Overhangs · not mastered yet". */
+/** Short human description of a rule, e.g. "Hardest 100 of 4★ · Overhangs · not locked in yet". */
 export function describeRule(rule, themeText = {}) {
   const stars = (rule.ratings || []).sort().map((r) => `${r}★`).join('+') || 'no ratings';
   const d = rule.difficulty || {};
