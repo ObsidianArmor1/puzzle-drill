@@ -41,6 +41,8 @@ Progress is stored per puzzle ID in each player's browser (localStorage), so upd
 
 Difficulty is each puzzle's global success rate, smoothed toward its star rating's average (as if it had 10 extra attempts at the average). Most 1★ puzzles have only one or no attempts, so without smoothing their rate would be a random 0% or 100%.
 
+**SR+ (engine review):** for 87 puzzles, a patched StackRabbit that sees every NES-reachable placement (double tucks, spin-tucks and other multi-input moves under overhangs) prefers a different move than nestris.org's engine. On those puzzles the solution screen shows an extra **SR+** row (hover it to see the move) and a note saying what inputs it needs; missed-puzzle reviews show "SR+ disagrees". Grading is unchanged: nestris.org's #1 is still the answer. The data is `data/engine-review.<hash>.json`, written by `node tools/import-engine-review.mjs` from the engine run in `../engine-lab/reach-audit/`.
+
 If the bank ever changes, export again with the scraper (`../tools/nestris-puzzle-scraper.js`, **Download all**) and run `node tools/import-scrape.mjs <export.json>`. It merges into `data/` and renames the files by content hash so browsers pick up the change. Players' progress is untouched.
 
 ## Run locally

@@ -718,7 +718,24 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         </div>
       </div>`).join('');
 
-    const yourMoveRow = solved && state.idx === -1 && state.submission?.first && state.submission?.second ? `
+    // Patched StackRabbit (sees every NES-reachable placement) prefers a different move on a few puzzles.
+    // Shown for information only: grading follows nestris.org.
+    const rv = dec.review;
+    const sub0 = state.submission;
+    const youFoundReview = !!(rv && sub0?.first && sub0?.second && matchSubmission([rv], sub0.first, sub0.second) === 0);
+    const reviewRow = solved && rv ? `
+      <div class="row-container">
+        <div class="guesses"><p></p></div><div></div>
+        <div class="engine-move table-rows review-move${youFoundReview ? ' player-move' : ''}" data-move="review" title="Patched StackRabbit's move (not graded)">
+          <p><b>SR+</b></p>
+          <p>${rv.score > 0 ? '+' + rv.score : rv.score}</p>
+          <p>${esc(rv.first.getTetrisNotation())}</p>
+          <p>${esc(rv.second.getTetrisNotation())}</p>
+        </div>
+      </div>` : '';
+    const reviewNote = solved && rv ? `<p class="engine-note review-note">${youFoundReview ? 'You found it! ' : ''}A patched StackRabbit that sees every NES-reachable placement prefers <b>SR+</b>, which needs ${esc(rv.how)} (it scores ${rv.score} vs ${rv.was} for its old #1). nestris.org still counts #1 as the answer.</p>` : '';
+
+    const yourMoveRow = solved && state.idx === -1 && !youFoundReview && state.submission?.first && state.submission?.second ? `
       <div class="row-container">
         <div class="guesses"><p></p></div><div></div>
         <div class="engine-move table-rows player-move" data-move="you">
@@ -756,8 +773,9 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
                   <div class="engine-container">
                     <div class="row-container"><div class="labels"><p>Guesses</p></div><div></div>
                       <div class="labels table-rows"><p>Rank</p><p>Score</p><p>Current</p><p>Next</p></div></div>
-                    ${engineRows}${yourMoveRow}
+                    ${engineRows}${yourMoveRow}${reviewRow}
                   </div>
+                  ${reviewNote}
                 </div>
               `}
             </div>
@@ -830,7 +848,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       };
       show(undefined);
       root.querySelectorAll('.engine-move[data-move]').forEach((row) => {
-        row.onmouseenter = () => show(row.dataset.move === 'you' ? undefined : dec.moves[Number(row.dataset.move)]);
+        row.onmouseenter = () => show(row.dataset.move === 'you' ? undefined : row.dataset.move === 'review' ? dec.review : dec.moves[Number(row.dataset.move)]);
         row.onmouseleave = () => show(undefined);
       });
       root.querySelector('#retry').onclick = retry;
@@ -1180,7 +1198,7 @@ function renderSummary(data, session) {
     tile.href = `#/puzzle/${encodeURIComponent(p.id)}`;
     tile.className = 'tile st-learning';
     tile.innerHTML = `<div class="b"></div>
-      <div class="meta"><span>Best: <b>${esc(best.first.getTetrisNotation())} · ${esc(best.second.getTetrisNotation())}</b></span></div>
+      <div class="meta"><span>Best: <b>${esc(best.first.getTetrisNotation())} · ${esc(best.second.getTetrisNotation())}</b></span>${d.review ? `<span class="review-tag" title="A patched StackRabbit prefers ${esc(d.review.first.getTetrisNotation())} · ${esc(d.review.second.getTetrisNotation())}">SR+ disagrees</span>` : ''}</div>
       <div class="meta"><span>${e.you ? `You: ${esc(e.you)}` : 'You viewed the solution'}</span><span>${globalLabel(p)}</span></div>`;
     tile.onclick = () => { singleReturn = '#/summary'; };
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({

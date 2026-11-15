@@ -26,6 +26,14 @@ export function loadAll() {
     }
     for (const list of byRating.values()) list.sort((a, b) => a.id.localeCompare(b.id));
 
+    // Patched-StackRabbit answers where it disagrees with the original engine (tools/import-engine-review.mjs)
+    if (manifest.engineReview?.file) {
+      try {
+        const review = await (await fetch(`data/${manifest.engineReview.file}`)).json();
+        for (const [id, r] of Object.entries(review.puzzles)) { const p = byId.get(id); if (p) p.review = r; }
+      } catch (e) { console.warn('Failed to load', manifest.engineReview.file, e); }
+    }
+
     const rankedByRating = rankByDifficulty(byRating);
     return { byId, byRating, rankedByRating, manifest };
   })();
@@ -79,6 +87,11 @@ export function decode(p) {
         second: MoveableTetromino.fromInt2(m.next),
         score: m.score, guesses: m.guesses,
       })),
+      // { first, second, score, was, how }: the patched engine's preferred move, shown but not graded
+      review: p.review ? {
+        first: MoveableTetromino.fromInt2(p.review.m[0]), second: MoveableTetromino.fromInt2(p.review.m[1]),
+        score: p.review.m[2], was: p.review.was, how: p.review.how,
+      } : null,
     };
     decoded.set(p.id, d);
     if (decoded.size > 300) decoded.delete(decoded.keys().next().value);
