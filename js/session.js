@@ -31,6 +31,11 @@ export const MODES = {
     icon: 'img/puzzle-mode/battle.svg',
     description: 'Only puzzles you have missed before or never got right, worst first. A puzzle leaves once you solve it.',
   },
+  through: {
+    label: 'Play Through',
+    icon: 'img/puzzle-mode/rush.svg',
+    description: 'Every puzzle in the set once, in order. Stop any time: it picks up where you left off.',
+  },
   endless: {
     label: 'Endless',
     icon: 'img/puzzle-mode/normal.svg',
@@ -154,6 +159,53 @@ class MistakesSession extends Session {
   }
 }
 
+// ---------- Play Through ----------
+// Position is kept per set in localStorage: { [setKey]: { seen: [puzzle ids], correct: n } }.
+const THROUGH_KEY = 'pd.through.v1';
+const readThrough = () => { try { return JSON.parse(localStorage.getItem(THROUGH_KEY)) || {}; } catch { return {}; } };
+const writeThrough = (all) => { try { localStorage.setItem(THROUGH_KEY, JSON.stringify(all)); } catch { /* storage full or blocked */ } };
+/** { seen, correct, total, left } for a set's play-through (only counting puzzles still in the set). */
+export function throughStatus(setKey, puzzles) {
+  const t = readThrough()[setKey];
+  const ids = new Set(puzzles.map((p) => p.id));
+  const seen = (t?.seen || []).filter((id) => ids.has(id)).length;
+  return { seen, correct: Math.min(t?.correct || 0, seen), total: puzzles.length, left: puzzles.length - seen };
+}
+export function resetThrough(setKey) { const all = readThrough(); delete all[setKey]; writeThrough(all); }
+
+class ThroughSession extends Session {
+  /** puzzles: in play order. setKey: where the position is stored. A finished play-through starts over. */
+  constructor(rating, puzzles, { setKey = 'default' } = {}) {
+    super('through', rating);
+    this.setKey = setKey;
+    if (throughStatus(setKey, puzzles).left === 0) resetThrough(setKey);
+    const t = readThrough()[setKey] || { seen: [], correct: 0 };
+    const seen = new Set(t.seen);
+    this.total = puzzles.length;
+    this.seenBefore = puzzles.filter((p) => seen.has(p.id)).length;
+    this.correctBefore = Math.min(t.correct, this.seenBefore);
+    this.queue = puzzles.filter((p) => !seen.has(p.id));
+  }
+  next() { return this.queue.shift() || null; }
+  result(puzzle, correct) {
+    super.result(puzzle, correct);
+    const all = readThrough();
+    const t = all[this.setKey] || { seen: [], correct: 0 };
+    if (!t.seen.includes(puzzle.id)) { t.seen.push(puzzle.id); if (correct) t.correct++; }
+    all[this.setKey] = t;
+    writeThrough(all);
+  }
+  remaining() { return this.queue.length; }
+  get finished() { return this.queue.length === 0 && this.seenBefore + this.done >= this.total; }
+  progressLines() {
+    return [
+      ['Progress', `${this.seenBefore + this.done} / ${this.total}`],
+      ['Correct', `${this.correctBefore + this.correct}`],
+      ['Streak', `${this.streak}`],
+    ];
+  }
+}
+
 // ---------- Endless ----------
 class EndlessSession extends Session {
   constructor(rating, puzzles) { super('endless', rating); this.puzzles = puzzles; this.recent = []; }
@@ -190,6 +242,7 @@ export function createSession(mode, rating, puzzles, opts = {}) {
     case 'learn': return new LearnSession(rating, puzzles);
     case 'run': return new RunSession(rating, puzzles, opts);
     case 'mistakes': return new MistakesSession(rating, puzzles);
+    case 'through': return new ThroughSession(rating, puzzles, opts);
     case 'endless': return new EndlessSession(rating, puzzles);
     case 'single': return new SingleSession(opts.puzzle);
     default: throw new Error('Unknown mode ' + mode);

@@ -10,6 +10,7 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
   A puzzle counts as *mastered* once it reaches the 7-day stage.
   New puzzles come **hardest first** by default, so Learn works its way down the set by difficulty (changeable to easiest first or random in Settings).
 - **Perfect Run**: N puzzles in a row, aiming for zero mistakes. Afterwards, *Re-run misses* until the set is clean.
+- **Play Through**: every puzzle in the set exactly once, in order (a star set goes hardest first; a custom or shared set keeps its own order). Stop any time and it resumes where you left off; when you've played them all it shows your score and **Start over** begins a new pass.
 - **Mistakes**: only puzzles you have missed, worst first.
 - **Endless**: random puzzles from the set.
 - **Browse**: every puzzle as a board thumbnail with your record on it. Click one to play it.
@@ -57,12 +58,16 @@ Then open http://127.0.0.1:8791/. Opening `index.html` directly from disk won't 
 Push this folder to a GitHub repo, then go to **Settings → Pages → Deploy from a branch → `main` / root**.
 Every path is relative, so it works at `https://<user>.github.io/<repo>/`.
 
+## Deploying changes
+
+GitHub Pages caches each file for up to 10 minutes, so `index.html` pins every script and the stylesheet to a content hash (an import map). After changing anything in `js/` or `css/`, run `npm run stamp` before committing; `npm test` fails if you forget.
+
 ## Tests
 
 ```bash
 npm test
 ```
-Runs `tests/scheduling.test.mjs` with Node's built-in test runner. It covers the spaced-repetition rules, Learn ordering, Perfect Run, the difficulty slices and backup merging. Nothing to install.
+Runs the tests in `tests/` with Node's built-in test runner. They cover the spaced-repetition rules, Learn ordering, Perfect Run, Play Through, the difficulty slices, backup merging, and that `index.html`'s versions are current. Nothing to install.
 
 ## Files
 

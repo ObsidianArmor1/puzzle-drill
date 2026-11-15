@@ -1,1 +1,1 @@
-{ "name": "puzzle-drill", "private": true, "type": "module", "scripts": { "test": "node --test tests/" } }
+{"name": "puzzle-drill", "private": true, "type": "module", "scripts": {"test": "node --test tests/", "stamp": "node tools/stamp-versions.mjs"}}

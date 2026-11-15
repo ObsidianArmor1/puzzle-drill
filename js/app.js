@@ -5,7 +5,7 @@ import {
   sharePayload, parseShare, setFile, parseSetFile, ruleIsPortable, uniqueName,
 } from './sets.js';
 import { NesBoard, PuzzleBoard, pieceSVG } from './board.js';
-import { createSession, MODES, orderNew } from './session.js';
+import { createSession, MODES, orderNew, throughStatus, resetThrough } from './session.js';
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, isMastered, resetProgress, MASTERED_BOX,
   exportProgress, importProgress, lastBackup, progressCount,
@@ -159,6 +159,7 @@ function homeView(data) {
   const unseen = list.filter((p) => !getRec(p.id)).length;
   const dueNow = sum ? sum.due + sum.learning : 0;
   const newNext = Math.min(s.newPerSession, unseen);
+  const through = sel && list.length ? throughStatus(sel.key, list) : null;
   let contMode = MODES[s.lastMode] ? s.lastMode : 'learn';
   if (contMode === 'mistakes' && !mistakes) contMode = 'learn';
   if (contMode === 'learn' && dueNow + newNext === 0 && list.length) contMode = 'run';
@@ -167,6 +168,7 @@ function homeView(data) {
     run: dueNow + newNext === 0 && s.lastMode !== 'run' ? `Nothing due right now: a Perfect Run of ${Math.min(s.runSize, list.length)} keeps it sharp` : `${Math.min(s.runSize, list.length)} puzzles in a row, aiming for zero mistakes`,
     mistakes: `${mistakes.toLocaleString()} puzzle${mistakes === 1 ? '' : 's'} to fix`,
     endless: 'Random puzzles from this set',
+    through: through && through.seen && through.left ? `${through.seen.toLocaleString()} / ${through.total.toLocaleString()} played · ${through.left.toLocaleString()} to go` : `All ${list.length.toLocaleString()} puzzles, in order`,
   }[contMode];
   const t = daily.today;
   const todayLine = t.n
@@ -179,6 +181,7 @@ function homeView(data) {
     run: `${MODES.run.description} Picks ${Math.min(s.runSize, list.length)} from: ${{ unmastered: 'not yet mastered', random: 'the whole set', seen: 'puzzles you have seen' }[s.runPick || 'unmastered']}.`,
     mistakes: MODES.mistakes.description,
     endless: MODES.endless.description,
+    through: `${MODES.through.description} ${through ? (through.left === 0 ? `Done: ${through.correct} / ${through.total} correct. Starting it again starts over.` : through.seen ? `${through.seen} / ${through.total} played, ${through.correct} correct.` : `${through.total} puzzles${sel?.kind === 'rating' ? ', hardest first' : ''}.`) : ''}`,
   };
   const modeBtn = (mode, badge) => `
     <button class="mode-btn${list.length ? '' : ' locked'}" data-mode="${mode}">
@@ -238,6 +241,7 @@ function homeView(data) {
         <div class="mode-row">
           ${modeBtn('learn', sum ? (sum.due + sum.learning || '') : '')}
           ${modeBtn('run', Math.min(s.runSize, list.length) || '')}
+          ${modeBtn('through', through ? (through.left === 0 ? '✓' : through.left) : '')}
           ${modeBtn('mistakes', mistakes || '')}
           ${modeBtn('endless', '')}
         </div>
@@ -620,7 +624,9 @@ function captureKey(btn, done) {
 function playView(data, mode, key, opts = {}) {
   const set = resolveSet(data, key);
   if (!MODES[mode] || !set?.puzzles.length) return go('#/');
-  const session = createSession(mode, set.rating, set.puzzles, { pick: getSettings().runPick || 'unmastered', ...opts });
+  // Play Through: a star set goes hardest first; custom sets keep their own order
+  const puzzles = mode === 'through' && set.kind === 'rating' ? orderNew(set.puzzles, 'hardest') : set.puzzles;
+  const session = createSession(mode, set.rating, puzzles, { pick: getSettings().runPick || 'unmastered', setKey: key, ...opts });
   session.set = set;
   setSettings({ lastMode: mode });
   runSession(data, session);
@@ -1169,7 +1175,10 @@ function renderSummary(data, session) {
     <div class="content summary-page">
       <div class="end-card">
         ${session.set?.kind === 'custom' ? `<p class="set-title">${esc(session.set.name)}</p>` : stars(session.rating, 90)}
-        <h1>${session.mode === 'run' ? (perfect ? 'Perfect run!' : 'Run complete') : session.done ? 'Session complete' : 'Nothing to do here'}</h1>
+        <h1>${session.mode === 'run' ? (perfect ? 'Perfect run!' : 'Run complete') : session.mode === 'through' ? (session.finished ? 'Play-through complete!' : 'Play-through paused') : session.done ? 'Session complete' : 'Nothing to do here'}</h1>
+        ${session.mode === 'through' ? `<p class="engine-note" style="font-size:13px">${session.finished
+          ? `You've played all ${session.total} puzzles in this set: ${session.correctBefore + session.correct} correct on the first try.`
+          : `${session.seenBefore + session.done} of ${session.total} played. Play Through picks up here next time.`}</p>` : ''}
         ${session.done ? `<p class="big">${session.correct}/${session.done}</p>
         <div class="summary-row">
           <div class="summary-chip"><span class="v">${pct}%</span><span class="k">first-try accuracy</span></div>
@@ -1177,7 +1186,7 @@ function renderSummary(data, session) {
           <div class="summary-chip"><span class="v">${misses.length}</span><span class="k">puzzles missed</span></div>
         </div>` : `<p class="engine-note" style="font-size:13px">${session.mode === 'mistakes' ? 'No mistakes to fix in this set.' : 'No puzzles are due right now. Raise "New puzzles per Learn session" in Settings or try a Perfect Run.'}</p>`}
         ${misses.length ? solidButton({ label: `Re-run ${misses.length} miss${misses.length === 1 ? '' : 'es'}`, color: '#B73C3C', stretch: true, id: 'rerun' }) : ''}
-        ${session.mode !== 'single' ? solidButton({ label: session.mode === 'run' ? 'New run' : 'Again', icon: 'assets/img/button-icons/new-puzzle.svg', color: '#54A165', stretch: true, id: 'again' }) : ''}
+        ${session.mode !== 'single' ? solidButton({ label: session.mode === 'run' ? 'New run' : session.mode === 'through' ? (session.finished ? 'Start over' : 'Keep going') : 'Again', icon: 'assets/img/button-icons/new-puzzle.svg', color: '#54A165', stretch: true, id: 'again' }) : ''}
         ${solidButton({ label: 'Home', color: '#3C5EB7', stretch: true, id: 'home' })}
       </div>
       ${missLog.length ? `<div class="review">
@@ -1208,7 +1217,11 @@ function renderSummary(data, session) {
   }
 
   root.querySelector('#exit').onclick = root.querySelector('#home').onclick = () => go('#/');
-  root.querySelector('#again')?.addEventListener('click', () => playView(data, session.mode, session.set?.key || ratingKey(session.rating)));
+  root.querySelector('#again')?.addEventListener('click', () => {
+    const key = session.set?.key || ratingKey(session.rating);
+    if (session.mode === 'through' && session.finished) resetThrough(key);
+    playView(data, session.mode, key);
+  });
   root.querySelector('#rerun')?.addEventListener('click', () => {
     const pool = misses.map((id) => data.byId.get(id)).filter(Boolean);
     const s2 = createSession('run', session.rating, pool, { ids: misses });

@@ -9,10 +9,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Neucha&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=fede436222">
 </head>
 <body>
   <div id="app"></div>
-  <script type="module" src="js/app.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/app.js": "./js/app.js?v=00e9b8b147",
+      "./js/board.js": "./js/board.js?v=e058f0d1c9",
+      "./js/core.js": "./js/core.js?v=df250e875d",
+      "./js/data.js": "./js/data.js?v=bbf75ed300",
+      "./js/progress.js": "./js/progress.js?v=639811b4aa",
+      "./js/session.js": "./js/session.js?v=fa68a22e38",
+      "./js/sets.js": "./js/sets.js?v=c87969c3a1"
+    }
+  }
+  </script>
+  <script type="module" src="./js/app.js?v=00e9b8b147"></script>
 </body>
 </html>

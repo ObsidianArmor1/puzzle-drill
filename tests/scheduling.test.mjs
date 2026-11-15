@@ -12,7 +12,7 @@ globalThis.localStorage = {
 globalThis.window = { addEventListener() {} };
 
 const P = await import('../js/progress.js');
-const { createSession, orderNew } = await import('../js/session.js');
+const { createSession, orderNew, throughStatus } = await import('../js/session.js');
 const { rankByDifficulty } = await import('../js/data.js');
 const S = await import('../js/sets.js');
 
@@ -26,6 +26,7 @@ beforeEach(() => {
   store.delete('pd.sets.v1');
   store.delete('pd.daily.v1');
   store.delete('pd.history.v1');
+  store.delete('pd.through.v1');
   P.resetProgress();
   P.setSettings({ ...P.DEFAULT_SETTINGS });
   now = Date.UTC(2026, 0, 1);
@@ -349,3 +350,43 @@ test('set snapshots keep one entry per day', () => {
 });
 
 process.on('exit', () => { Date.now = realNow; });
+
+// ---------- Play Through ----------
+const playAll = (session, isCorrect = () => true, stopAfter = Infinity) => {
+  const order = [];
+  for (let p; order.length < stopAfter && (p = session.next()); ) { order.push(p.id); session.result(p, isCorrect(p)); }
+  return order;
+};
+const mk = (n) => Array.from({ length: n }, (_, i) => ({ id: `t${String(i).padStart(3, '0')}`, rating: 4 }));
+
+test('Play Through plays every puzzle once, in the given order', () => {
+  const list = mk(87);
+  const s = createSession('through', 4, list, { setKey: 'cX' });
+  const order = playAll(s);
+  assert.deepEqual(order, list.map((p) => p.id));
+  assert.equal(s.finished, true);
+  assert.deepEqual(throughStatus('cX', list), { seen: 87, correct: 87, total: 87, left: 0 });
+});
+
+test('Play Through resumes where it stopped, and counts first-try results only', () => {
+  const list = mk(10);
+  const s1 = createSession('through', 4, list, { setKey: 'cY' });
+  const first = playAll(s1, (p) => p.id !== 't001', 4); // misses t001
+  assert.deepEqual(first, ['t000', 't001', 't002', 't003']);
+  assert.equal(s1.finished, false);
+  const s2 = createSession('through', 4, list, { setKey: 'cY' });
+  assert.equal(s2.remaining(), 6);
+  const rest = playAll(s2);
+  assert.deepEqual(rest, list.slice(4).map((p) => p.id));
+  assert.equal(s2.finished, true);
+  assert.deepEqual(throughStatus('cY', list), { seen: 10, correct: 9, total: 10, left: 0 });
+  assert.equal(s2.progressLines()[0][1], '10 / 10');
+});
+
+test('Play Through starts over after a finished pass, and positions are per set', () => {
+  const list = mk(3);
+  playAll(createSession('through', 4, list, { setKey: 'cZ' }));
+  const again = createSession('through', 4, list, { setKey: 'cZ' });
+  assert.equal(again.remaining(), 3);
+  assert.equal(throughStatus('cOther', list).left, 3);
+});
