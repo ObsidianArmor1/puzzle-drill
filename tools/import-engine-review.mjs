@@ -36,6 +36,8 @@ for (const r of valid) {
     was: storedIdx >= 0 ? +r.p30[storedIdx][2].toFixed(1) : null, // patched score of nestris.org's answer (null: not in its top 5)
     how: HOW[r.code] ?? (r.code === 'eval' ? null : r.code), piece: r.piece,
     kind: r.clear ? 'answer' : 'close',
+    // newer: the unpatched current StackRabbit already picks it (the gap is between StackRabbit versions, not the patch)
+    newer: r.newerSR === 'both',
   };
 }
 const body = JSON.stringify({ engine: 'StackRabbit with every NES-reachable placement (double-tuck branch ac7ad48); nestris.org query, 30 Hz and 12 Hz agreeing', puzzles: out });
