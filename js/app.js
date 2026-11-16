@@ -1,4 +1,5 @@
 import { loadAll, loadExtreme, decode, matchSubmission } from './data.js';
+import { ratePair } from './rater.js';
 import {
   listSets, getCustomSet, saveSet, deleteSet, togglePuzzle, importSets, resolveSet, evaluateRule, describeRule,
   ratingKey, customKey, DEFAULT_RULE, THEMES, STATUS_OPTIONS,
@@ -893,7 +894,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       <div class="row-container">
         <div class="guesses"><p></p></div><div></div>
         <div class="engine-move table-rows player-move" data-move="you">
-          <p><b>You</b></p><p>–</p>
+          <p><b>You</b></p><p id="you-score" title="Your move, rated by the same StackRabbit and settings as the table">…</p>
           <p>${esc(state.submission.first.getTetrisNotation())}</p>
           <p>${esc(state.submission.second.getTetrisNotation())}</p>
         </div>
@@ -1001,6 +1002,20 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         });
       };
       show(undefined);
+      // Rate the player's own move when it isn't in the engine's top 5
+      const youCell = root.querySelector('#you-score');
+      if (youCell && sub?.first && sub?.second) {
+        ratePair(data.manifest, p.id, dec, sub.first, sub.second).then((r) => {
+          if (!youCell.isConnected) return;
+          if (r.error || typeof r.score !== 'number') { youCell.textContent = '–'; youCell.title = 'Could not rate this move'; return; }
+          const sc = Math.round(r.score * 100) / 100;
+          youCell.textContent = sc > 0 ? `+${sc}` : `${sc}`;
+          const best = dec.moves[0]?.score;
+          if (typeof best === 'number' && sc > best) {
+            youCell.closest('.engine-div')?.insertAdjacentHTML('beforeend', `<p class="engine-note review-note">Your move scores higher than #1 when StackRabbit plays it out. The engine only plays out a shortlist of moves that look best at first glance, and yours wasn't on it.</p>`);
+          }
+        });
+      }
       root.querySelectorAll('.engine-move[data-move]').forEach((row) => {
         row.onmouseenter = () => show(row.dataset.move === 'you' ? undefined : row.dataset.move === 'review' ? dec.review : dec.moves[Number(row.dataset.move)]);
         row.onmouseleave = () => show(undefined);

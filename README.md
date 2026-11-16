@@ -27,6 +27,8 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 
 Progress belongs to the puzzle, so a new set immediately shows what you already know about its puzzles. The modes, home stats and Browse all work on the selected set.
 
+**Rating your own move:** when you answer with a move that isn't in the engine's top 5, the **You** row fills in its score: the same pinned StackRabbit and settings nestris.org used to score the top 5 (343 playouts), so the numbers compare directly. It runs in your browser as WebAssembly (`engine/`, about 6.6 MB, downloaded only the first time it's needed; built from `../engine-lab/ratepair` with `tools/import-engine.mjs`). If your move scores higher than #1, a note explains that the engine only plays out a shortlist of moves that look best at first glance.
+
 **Links to nestris.org:** on a puzzle's solution screen, **Share** opens a small menu: copy the Puzzle Drill link, copy the puzzle's own nestris.org link, or open it on nestris.org. Hovering a Browse tile shows a small ↗ in its corner that opens the puzzle on nestris.org. Extreme puzzles get the same options: they aren't in nestris.org's bank, but the ID encodes the board and pieces, so the link opens there as an unrated shared puzzle, answered by nestris.org's in-browser engine.
 
 Controls are the same as nestris.org: hover to move, click to place, Z/X to rotate, Q to undo.
