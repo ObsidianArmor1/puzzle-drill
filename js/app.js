@@ -1026,13 +1026,13 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       };
       root.querySelector('#share').onclick = (e) => {
         const drill = `${location.origin}${location.pathname}${H('/puzzle/' + encodeURIComponent(p.id))}`;
-        // Generated (Extreme) puzzles aren't on nestris.org, so they only have the Puzzle Drill link
-        if (p.generated) return copyLink(drill, 'Puzzle link');
         if (document.querySelector('.pop-menu')) return document.querySelector('.pop-menu').remove();
         popMenu(e.currentTarget, [
           { label: 'Copy Puzzle Drill link', onClick: () => copyLink(drill, 'Puzzle Drill link') },
-          { label: 'Copy nestris.org link', onClick: () => copyLink(nestrisUrl(p.id), 'nestris.org link') },
-          { label: 'Open on nestris.org ↗', onClick: () => window.open(nestrisUrl(p.id), '_blank', 'noopener') },
+          // Generated puzzles aren't in nestris.org's bank: the link still opens (the ID encodes the board and pieces),
+          // as an unrated shared puzzle answered by nestris.org's in-browser engine
+          { label: p.generated ? 'Copy nestris.org link (unrated there)' : 'Copy nestris.org link', onClick: () => copyLink(nestrisUrl(p.id), 'nestris.org link') },
+          { label: p.generated ? 'Open on nestris.org (unrated) ↗' : 'Open on nestris.org ↗', onClick: () => window.open(nestrisUrl(p.id), '_blank', 'noopener') },
         ]);
       };
       root.querySelector('#next').onclick = () => (session.mode === 'single' && last ? exit() : next());
@@ -1141,7 +1141,7 @@ function browseView(data, key) {
     const label = TIERS[tierIndex(r)].label;
     const review = !r ? '' : r.b <= 1 ? 'retry now' : isDue(r, now) ? 'review due' : `review ${reviewIn(r, now)}`;
     tile.className = `tile t-${st}`;
-    tile.innerHTML = `${p.generated ? '' : `<span class="nestris-link" role="link" tabindex="0" title="Open on nestris.org">↗</span>`}${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
+    tile.innerHTML = `<span class="nestris-link" role="link" tabindex="0" title="${p.generated ? 'Open on nestris.org (not in its bank: opens as an unrated shared puzzle)' : 'Open on nestris.org'}">↗</span>${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
       <div class="meta"><span class="tier-badge t-${st}">${label}</span><span title="Hardness rank within ${p.rating}★">${mixed ? `${p.rating}★ ` : ''}${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
       <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${globalLabel(p)}</span></div>`;
