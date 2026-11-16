@@ -116,7 +116,7 @@ export function decode(p) {
       // { first, second, score, was, how }: the patched engine's preferred move, shown but not graded
       review: p.review ? {
         first: MoveableTetromino.fromInt2(p.review.m[0]), second: MoveableTetromino.fromInt2(p.review.m[1]),
-        score: p.review.m[2], was: p.review.was, how: p.review.how, kind: p.review.kind || 'answer', newer: !!p.review.newer,
+        score: p.review.m[2], was: p.review.was, how: p.review.how, kind: p.review.kind || 'answer',
       } : null,
     };
     decoded.set(p.id, d);

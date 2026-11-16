@@ -883,14 +883,11 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
           <p>${esc(rv.second.getTetrisNotation())}</p>
         </div>
       </div>` : '';
-    const reviewNote = solved && rv ? `<p class="engine-note review-note">${youFoundReview ? 'You found it! ' : ''}${rv.newer
-        ? 'The current StackRabbit (newer than the version nestris.org runs)'
-        : 'A patched StackRabbit that sees every NES-reachable placement'} ${rv.kind === 'answer'
+    const reviewNote = solved && rv ? `<p class="engine-note review-note">${youFoundReview ? 'You found it! ' : ''}A patched StackRabbit that sees every NES-reachable placement ${rv.kind === 'answer'
         ? 'prefers <b>SR+</b> by more than 3 points at both 30 Hz and 12 Hz, so under nestris.org\'s own rating rules it would be this puzzle\'s answer.'
         : 'rates <b>SR+</b> slightly higher (within 3 points), so under nestris.org\'s rules this puzzle would be too close to call.'}
-      ${rv.newer ? "nestris.org's version can find this move too, but scores the position after it lower."
-        : rv.how ? `It needs ${esc(rv.how)}, playable at 12 Hz; no unpatched StackRabbit finds it.` : ''}
-      ${rv.was !== null && rv.was !== undefined ? `(${rv.newer ? 'Its' : 'Patched'} scores: ${rv.score} vs ${rv.was} for #1.)` : ''} nestris.org still counts #1 as the answer.</p>` : '';
+      ${rv.how ? `It needs ${esc(rv.how)}, playable at 12 Hz.` : 'It needs no special input: the patched engine just rates the position after it higher, because it counts later tucks correctly.'}
+      ${rv.was !== null && rv.was !== undefined ? `(Patched scores: ${rv.score} vs ${rv.was} for #1.)` : ''} nestris.org still counts #1 as the answer.</p>` : '';
 
     const yourMoveRow = solved && state.idx === -1 && !youFoundReview && state.submission?.first && state.submission?.second ? `
       <div class="row-container">
@@ -1378,7 +1375,7 @@ function renderSummary(data, session) {
     tile.href = H(`/puzzle/${encodeURIComponent(p.id)}`);
     tile.className = 'tile st-learning';
     tile.innerHTML = `<div class="b"></div>
-      <div class="meta"><span>Best: <b>${esc(best.first.getTetrisNotation())} · ${esc(best.second.getTetrisNotation())}</b></span>${d.review ? `<span class="review-tag" title="${d.review.newer ? 'The current StackRabbit' : 'A patched StackRabbit'} prefers ${esc(d.review.first.getTetrisNotation())} · ${esc(d.review.second.getTetrisNotation())}">${d.review.kind === 'close' ? 'SR+ close call' : 'SR+ disagrees'}</span>` : ''}</div>
+      <div class="meta"><span>Best: <b>${esc(best.first.getTetrisNotation())} · ${esc(best.second.getTetrisNotation())}</b></span>${d.review ? `<span class="review-tag" title="A patched StackRabbit prefers ${esc(d.review.first.getTetrisNotation())} · ${esc(d.review.second.getTetrisNotation())}">${d.review.kind === 'close' ? 'SR+ close call' : 'SR+ disagrees'}</span>` : ''}</div>
       <div class="meta"><span>${e.you ? `You: ${esc(e.you)}` : 'You viewed the solution'}</span><span>${globalLabel(p)}</span></div>`;
     tile.onclick = () => { singleReturn = '#/summary'; };
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({
