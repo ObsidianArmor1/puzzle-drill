@@ -487,6 +487,12 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .home > .set-panel, .home > .continue, .home > .intro { width: min(760px, 100%); }
 .mode-btn { gap: 6px; padding: 9px 6px; font-size: 14px; }
 .mode-btn img { width: 24px; height: 24px; }
+/* five modes on one row: compact tiles, icon over the full label, count as a corner badge */
+.mode-btn { position: relative; flex-direction: column; gap: 5px; padding: 11px 4px 9px; font-size: 13px; line-height: 1.15; white-space: normal; text-align: center; }
+.mode-btn img { width: 26px; height: 26px; }
+.mode-btn span:not(.badge) { overflow: visible; text-overflow: clip; }
+.mode-btn .badge { position: absolute; top: 5px; right: 6px; font-size: 10px; line-height: 16px; padding: 0 6px; }
+@media screen and (max-width: 700px) { .mode-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 .tier-cell { min-width: 110px; }
 .tier-cell .tier-bar { margin-top: 0; height: 8px; }
