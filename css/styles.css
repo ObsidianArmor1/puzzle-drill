@@ -514,3 +514,15 @@ button.navlink { font-family: var(--main-font); cursor: pointer; }
 .home.extreme > .panel { width: min(760px, 100%); box-sizing: border-box; }
 .x-about p { margin: 0 0 6px; font-size: 13px; line-height: 1.45; }
 .x-pick small { opacity: 0.7; margin-left: 2px; }
+
+/* nestris.org links: Share menu on the solution screen, hover-only arrow on Browse tiles */
+.pop-menu { position: fixed; z-index: 50; display: flex; flex-direction: column; padding: 4px; border-radius: 10px; background: #26272b; border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 8px 24px #000a; }
+.pop-menu button { font-family: var(--main-font); font-size: 13px; font-weight: 700; color: #eee; text-align: left; padding: 7px 10px; border-radius: 7px; white-space: nowrap; cursor: pointer; }
+.pop-menu button:hover { background: rgba(255,255,255,0.1); color: white; }
+.nestris-link {
+  position: absolute; top: 6px; left: 6px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--main-font); font-size: 13px; font-weight: 800; color: white; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25);
+  opacity: 0; transition: opacity 0.12s; cursor: pointer;
+}
+.tile:hover .nestris-link, .nestris-link:focus-visible { opacity: 1; }
+.nestris-link:hover { background: var(--puzzle); }

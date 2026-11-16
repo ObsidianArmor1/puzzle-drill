@@ -54,6 +54,34 @@ const tierBar = (tiers) => {
 const stars = (rating, width = 75) => `<img src="assets/img/rating-icons/star-${rating >= 1 && rating <= 6 ? rating : 'none'}.svg" width="${rating === 6 ? width * 1.198 : width}">`;
 
 let toastTimer;
+/** The puzzle's own share link on nestris.org (same format as the site's Share button). */
+const nestrisUrl = (id) => `https://nestris.org/online/puzzle?mode=single&id=${encodeURIComponent(id)}`;
+const copyLink = (url, what) => navigator.clipboard?.writeText(url).then(() => toast(`${what} copied to clipboard!`), () => toast(url));
+
+/** Small menu that opens above `anchor`; items: [{ label, onClick }]. Closes on choice, outside click or Escape. */
+function popMenu(anchor, items) {
+  document.querySelector('.pop-menu')?.remove();
+  const r = anchor.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.className = 'pop-menu';
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`;
+  menu.style.minWidth = `${Math.round(r.width)}px`;
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.textContent = it.label;
+    b.onclick = (e) => { e.stopPropagation(); close(); it.onClick(); };
+    menu.appendChild(b);
+  }
+  const away = (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  function close() { menu.remove(); window.removeEventListener('pointerdown', away, true); window.removeEventListener('keydown', esc, true); }
+  window.addEventListener('pointerdown', away, true);
+  window.addEventListener('keydown', esc, true);
+  cleanups.push(close);
+  document.body.appendChild(menu);
+}
+
 function toast(msg) {
   document.querySelector('.toast')?.remove();
   const t = document.createElement('div');
@@ -996,9 +1024,16 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         if (id) { const added = togglePuzzle(id, p.id); toast(`${added ? 'Added to' : 'Removed from'} "${getCustomSet(id).name}"`); }
         fillSets();
       };
-      root.querySelector('#share').onclick = () => {
-        const url = `${location.origin}${location.pathname}${H('/puzzle/' + encodeURIComponent(p.id))}`;
-        navigator.clipboard?.writeText(url).then(() => toast('Puzzle link copied to clipboard!'), () => toast(url));
+      root.querySelector('#share').onclick = (e) => {
+        const drill = `${location.origin}${location.pathname}${H('/puzzle/' + encodeURIComponent(p.id))}`;
+        // Generated (Extreme) puzzles aren't on nestris.org, so they only have the Puzzle Drill link
+        if (p.generated) return copyLink(drill, 'Puzzle link');
+        if (document.querySelector('.pop-menu')) return document.querySelector('.pop-menu').remove();
+        popMenu(e.currentTarget, [
+          { label: 'Copy Puzzle Drill link', onClick: () => copyLink(drill, 'Puzzle Drill link') },
+          { label: 'Copy nestris.org link', onClick: () => copyLink(nestrisUrl(p.id), 'nestris.org link') },
+          { label: 'Open on nestris.org ↗', onClick: () => window.open(nestrisUrl(p.id), '_blank', 'noopener') },
+        ]);
       };
       root.querySelector('#next').onclick = () => (session.mode === 'single' && last ? exit() : next());
       onKey((e) => {
@@ -1106,11 +1141,15 @@ function browseView(data, key) {
     const label = TIERS[tierIndex(r)].label;
     const review = !r ? '' : r.b <= 1 ? 'retry now' : isDue(r, now) ? 'review due' : `review ${reviewIn(r, now)}`;
     tile.className = `tile t-${st}`;
-    tile.innerHTML = `${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
+    tile.innerHTML = `${p.generated ? '' : `<span class="nestris-link" role="link" tabindex="0" title="Open on nestris.org">↗</span>`}${target ? `<button class="collect-btn${inTarget.has(p.id) ? ' in' : ''}" title="${inTarget.has(p.id) ? 'Remove from' : 'Add to'} ${esc(target.name)}">${inTarget.has(p.id) ? '✓' : '+'}</button>` : ''}<div class="b"></div>
       <div class="pieces">${pieceSVG(d.current, s.level, 1.3)}${pieceSVG(d.next, s.level, 1.3)}</div>
       <div class="meta"><span class="tier-badge t-${st}">${label}</span><span title="Hardness rank within ${p.rating}★">${mixed ? `${p.rating}★ ` : ''}${p.hardRank ? `#${p.hardRank.toLocaleString()}` : ''}</span></div>
       <div class="meta"><span>${r ? `you ${r.c}/${r.n}` : ''}${review ? ` · ${review}` : ''}</span><span>${globalLabel(p)}</span></div>`;
     new NesBoard(tile.querySelector('.b'), { scale: 1.3 }).update({ board: d.board, level: s.level });
+    tile.querySelector('.nestris-link')?.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      window.open(nestrisUrl(p.id), '_blank', 'noopener');
+    });
     tile.querySelector('.collect-btn')?.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       const added = togglePuzzle(target.id, p.id);

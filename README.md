@@ -27,6 +27,8 @@ There's no build step and no server, so it runs on GitHub Pages as plain files.
 
 Progress belongs to the puzzle, so a new set immediately shows what you already know about its puzzles. The modes, home stats and Browse all work on the selected set.
 
+**Links to nestris.org:** on a puzzle's solution screen, **Share** opens a small menu: copy the Puzzle Drill link, copy the puzzle's own nestris.org link, or open it on nestris.org. Hovering a Browse tile shows a small ↗ in its corner that opens the puzzle on nestris.org. (Extreme puzzles aren't on nestris.org, so they only have the Puzzle Drill link.)
+
 Controls are the same as nestris.org: hover to move, click to place, Z/X to rotate, Q to undo.
 After a puzzle: Enter/Space for the next one, R to retry, Esc to exit. Keys can be changed in Settings.
 On a phone, tap to preview a placement, tap the preview to place it, and use the on-screen rotate buttons.
