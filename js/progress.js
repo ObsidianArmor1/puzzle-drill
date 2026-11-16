@@ -12,10 +12,16 @@
 //   A miss drops ONE tier (Mastered -> Solid -> Familiar -> Learning) and brings the puzzle back for review the next
 //   day; Learning puzzles are re-asked right away. Keys stay new/attempted/familiar/proficient/mastered.
 
-const KEY = 'pd.progress.v1';
 const SETTINGS_KEY = 'pd.settings.v1';
-const DAILY_KEY = 'pd.daily.v1';
 const BACKUP_KEY = 'pd.lastBackup.v1';
+// Progress scopes: the main nestris.org bank ('main') and separate puzzle collections (e.g. 'extreme', the generated
+// puzzles) each keep their own per-puzzle records, daily stats and history. Settings are shared.
+export const SCOPES = ['main', 'extreme'];
+const scopeKeys = (sc) => (sc === 'main'
+  ? { KEY: 'pd.progress.v1', DAILY_KEY: 'pd.daily.v1', HISTORY_KEY: 'pd.history.v1' }
+  : { KEY: `pd.${sc}.progress.v1`, DAILY_KEY: `pd.${sc}.daily.v1`, HISTORY_KEY: `pd.${sc}.history.v1` });
+let scope = 'main';
+let K = scopeKeys(scope);
 const DAY = 86400000;
 export const INTERVALS = [0, 0, 1 * DAY, 3 * DAY, 7 * DAY, 16 * DAY, 35 * DAY];
 export const MASTERED_BOX = 4;
@@ -44,13 +50,22 @@ export function setSettings(patch) { settings = { ...settings, ...patch }; safeS
 
 // ---------- per-puzzle records ----------
 // rec: { n: attempts, c: correct, st: current streak, b: box, d: due ms, l: last ms, ok: last correct, bt: best ms, w: last wrong move index }
-let progress = safeGet(KEY, {});
+let progress = safeGet(K.KEY, {});
 let saveTimer = null;
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => safeSet(KEY, progress), 300);
+  saveTimer = setTimeout(() => safeSet(K.KEY, progress), 300);
 }
-window.addEventListener('beforeunload', () => { clearTimeout(saveTimer); safeSet(KEY, progress); });
+window.addEventListener('beforeunload', () => { clearTimeout(saveTimer); safeSet(K.KEY, progress); });
+
+/** Switch which collection's progress record()/getRec()/summaries/daily stats use. */
+export function setScope(sc) {
+  if (sc === scope) return;
+  clearTimeout(saveTimer); safeSet(K.KEY, progress);
+  scope = sc; K = scopeKeys(sc);
+  progress = safeGet(K.KEY, {});
+}
+export const getScope = () => scope;
 
 export const TIERS = [
   { key: 'new', label: 'New', tip: 'never played' },
@@ -140,14 +155,13 @@ export function summarize(puzzles, now = Date.now()) {
 // ---------- daily stats ----------
 // Keyed by the player's local date. Per day: n answered, c correct, f first-time puzzles, t ms spent,
 // u tiers gained, dn tiers lost.
-const HISTORY_KEY = 'pd.history.v1';
 export const dayKey = (date = Date.now()) => {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const today = () => dayKey();
 function bumpDaily(correct, isNew, ms, move = 0) {
-  const d = safeGet(DAILY_KEY, {});
+  const d = safeGet(K.DAILY_KEY, {});
   const k = today();
   d[k] = d[k] || { n: 0, c: 0 };
   d[k].n++; if (correct) d[k].c++;
@@ -155,9 +169,9 @@ function bumpDaily(correct, isNew, ms, move = 0) {
   if (ms) d[k].t = (d[k].t || 0) + Math.min(ms, 120000);
   if (move > 0) d[k].u = (d[k].u || 0) + 1;
   if (move < 0) d[k].dn = (d[k].dn || 0) + 1;
-  safeSet(DAILY_KEY, d);
+  safeSet(K.DAILY_KEY, d);
 }
-export const getDailyAll = () => safeGet(DAILY_KEY, {});
+export const getDailyAll = () => safeGet(K.DAILY_KEY, {});
 function streakFrom(d, end = Date.now()) {
   let streak = 0;
   const day = new Date(end);
@@ -166,11 +180,11 @@ function streakFrom(d, end = Date.now()) {
   return streak;
 }
 export function getDaily() {
-  const d = safeGet(DAILY_KEY, {});
+  const d = safeGet(K.DAILY_KEY, {});
   return { today: d[today()] || { n: 0, c: 0 }, streak: streakFrom(d) };
 }
 export function bestStreak() {
-  const days = Object.keys(safeGet(DAILY_KEY, {})).sort();
+  const days = Object.keys(safeGet(K.DAILY_KEY, {})).sort();
   let best = 0, run = 0, prev = null;
   for (const k of days) {
     const cur = new Date(`${k}T12:00:00`);
@@ -182,18 +196,25 @@ export function bestStreak() {
 
 // Daily snapshot of how many puzzles are mastered/seen in each set, for "mastered over time"
 export function snapshotSets(entries) {
-  const h = safeGet(HISTORY_KEY, {});
+  const h = safeGet(K.HISTORY_KEY, {});
   h[today()] = Object.fromEntries(entries.map((e) => [e.key, [e.mastered, e.seen, e.total]]));
   const keys = Object.keys(h).sort();
   for (const k of keys.slice(0, Math.max(0, keys.length - 400))) delete h[k];
-  safeSet(HISTORY_KEY, h);
+  safeSet(K.HISTORY_KEY, h);
 }
-export const getHistory = () => safeGet(HISTORY_KEY, {});
+export const getHistory = () => safeGet(K.HISTORY_KEY, {});
 
 // ---------- backup ----------
 export function exportProgress(extra = {}) {
   safeSet(BACKUP_KEY, Date.now());
-  return JSON.stringify({ kind: 'puzzle-drill-progress', version: 1, exportedAt: new Date().toISOString(), progress, settings, daily: safeGet(DAILY_KEY, {}), history: safeGet(HISTORY_KEY, {}), ...extra });
+  clearTimeout(saveTimer); safeSet(K.KEY, progress);
+  const main = scopeKeys('main');
+  // The other collections' progress travels in the same file
+  const scopes = Object.fromEntries(SCOPES.filter((sc) => sc !== 'main').map((sc) => {
+    const k = scopeKeys(sc);
+    return [sc, { progress: safeGet(k.KEY, {}), daily: safeGet(k.DAILY_KEY, {}), history: safeGet(k.HISTORY_KEY, {}) }];
+  }));
+  return JSON.stringify({ kind: 'puzzle-drill-progress', version: 1, exportedAt: new Date().toISOString(), progress: safeGet(main.KEY, {}), settings, daily: safeGet(main.DAILY_KEY, {}), history: safeGet(main.HISTORY_KEY, {}), scopes, ...extra });
 }
 export function importProgress(text, { merge = true } = {}) {
   const json = JSON.parse(text);
@@ -209,21 +230,33 @@ export function importProgress(text, { merge = true } = {}) {
     progress = json.progress || {};
   }
   if (json.daily) {
-    const d = safeGet(DAILY_KEY, {});
+    const d = safeGet(K.DAILY_KEY, {});
     for (const [k, v] of Object.entries(json.daily)) if (!d[k] || v.n > d[k].n) d[k] = v;
-    safeSet(DAILY_KEY, d);
+    safeSet(K.DAILY_KEY, d);
   }
   if (json.history && typeof json.history === 'object') {
-    const h = safeGet(HISTORY_KEY, {});
+    const h = safeGet(K.HISTORY_KEY, {});
     for (const [k, v] of Object.entries(json.history)) if (!h[k]) h[k] = v;
-    safeSet(HISTORY_KEY, h);
+    safeSet(K.HISTORY_KEY, h);
   }
   if (json.settings && typeof json.settings === 'object') setSettings(json.settings);
-  safeSet(KEY, progress);
+  safeSet(K.KEY, progress);
+  // Other collections: merge straight into their stores (newest record per puzzle wins)
+  for (const [sc, data] of Object.entries(json.scopes || {})) {
+    if (!SCOPES.includes(sc) || sc === scope || !data || typeof data !== 'object') continue;
+    const k = scopeKeys(sc);
+    const recs = merge ? safeGet(k.KEY, {}) : {};
+    for (const [id, rec] of Object.entries(data.progress || {})) {
+      if (rec && typeof rec.n === 'number' && (!recs[id] || (rec.l || 0) > (recs[id].l || 0))) recs[id] = rec;
+    }
+    safeSet(k.KEY, recs);
+    const d = safeGet(k.DAILY_KEY, {}); for (const [day, v] of Object.entries(data.daily || {})) if (!d[day] || v.n > d[day].n) d[day] = v; safeSet(k.DAILY_KEY, d);
+    const h = safeGet(k.HISTORY_KEY, {}); for (const [day, v] of Object.entries(data.history || {})) if (!h[day]) h[day] = v; safeSet(k.HISTORY_KEY, h);
+  }
   return { total: Object.keys(json.progress || {}).length, updated, json };
 }
 export function resetProgress(ids) {
   if (!ids) progress = {};
   else for (const id of ids) delete progress[id];
-  safeSet(KEY, progress);
+  safeSet(K.KEY, progress);
 }

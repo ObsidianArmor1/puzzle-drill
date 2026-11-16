@@ -74,6 +74,32 @@ function add(byId, rec) {
   });
 }
 
+// ---------- Extreme: generated puzzles, a separate collection ----------
+// Never played on nestris.org, so no attempts/solves: `predicted` is a model's 5★ solve rate, `chance` its chance of
+// being extreme, `order` the set's selection order (1 = most likely extreme / most varied first).
+let extremeCache = null;
+export function loadExtreme() {
+  if (!extremeCache) extremeCache = (async () => {
+    const { manifest } = await loadAll();
+    if (!manifest.extreme?.file) return null;
+    let json;
+    try { json = await (await fetch(`data/${manifest.extreme.file}`)).json(); } catch (e) { console.warn('Failed to load', manifest.extreme.file, e); return null; }
+    const byId = new Map(), byRating = new Map(), all = [];
+    for (const rec of json.puzzles) {
+      const p = {
+        id: rec.i, rating: rec.r, theme: rec.t ?? null,
+        moves: rec.m.map(([c, n, s]) => ({ current: c, next: n, score: s, guesses: null })),
+        attempts: null, solves: null, generated: true, order: rec.o, predicted: rec.p, chance: rec.x, hardRank: rec.o,
+      };
+      byId.set(p.id, p); all.push(p);
+      if (!byRating.has(p.rating)) byRating.set(p.rating, []);
+      byRating.get(p.rating).push(p);
+    }
+    return { byId, byRating, rankedByRating: byRating, all, manifest, generated: true, title: json.title || 'Extreme', notes: json.notes };
+  })();
+  return extremeCache;
+}
+
 // Decode the board/pieces and engine moves for display. Cached per puzzle.
 const decoded = new Map();
 export function decode(p) {

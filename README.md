@@ -33,6 +33,14 @@ On a phone, tap to preview a placement, tap the preview to place it, and use the
 
 Progress is stored per puzzle ID in each player's browser (localStorage), so updating the puzzle data never touches anyone's progress. **Export progress** / **Import progress** on the home page back it up or move it to another device. Import merges: for each puzzle the more recently played copy wins, and settings come along too.
 
+## Extreme (generated puzzles)
+
+**Extreme** (the card under the Library, or `#/x/`) is a separate section with 1,000 generated puzzles picked to be as hard as possible for 5★ players (868 rated 4★, 132 rated 5★ by nestris.org's own rating rules). They aren't in nestris.org's puzzle bank and have never been played, so there are no real solve rates or guess counts: the solution screen shows them as **Generated**, with a model's **predicted 5★ solve rate** and the puzzle's place in the set order. Answers and the engine's top 5 come from the same StackRabbit version nestris.org uses.
+
+All the modes and Browse work there (All / 5★ / 4★), in set order (most likely extreme and most varied first). Progress is its own: separate records, tiers, daily stats and Play Through position, none of it counted in the main Library, sets or Progress page. Backups (Export progress) include it.
+
+Data: `data/extreme.<hash>.json`, written by `node tools/import-generated.mjs <generated-set.json>`.
+
 ## Getting around
 
 - **Home**: a first-visit intro, a **Continue** card (your last mode on the selected set, with reviews due and today's numbers), the Library, and the modes.

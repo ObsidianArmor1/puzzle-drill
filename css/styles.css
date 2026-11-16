@@ -498,3 +498,19 @@ header { width: 100%; display: flex; flex-direction: column; align-items: center
 .tier-cell .tier-bar { margin-top: 0; height: 8px; }
 .stats-tiers { width: 100%; max-width: 720px; box-sizing: border-box; padding-inline: 8px; }
 .practice-note { text-align: left; margin: 2px 0 6px; font-size: 11px; opacity: 0.8; line-height: 1.35; }
+
+/* Extreme (generated puzzles) */
+button.navlink { font-family: var(--main-font); cursor: pointer; }
+.gen-tag { display: inline-block; font-family: var(--main-font); font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: #1b0d00; background: #FFB938; border-radius: 999px; padding: 1px 8px; vertical-align: middle; }
+.stat p.gen-tag { margin: 0; }
+.extreme-entry {
+  width: min(760px, 100%); box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; text-align: left; cursor: pointer;
+  border: 2px solid #B73C3C !important; background: linear-gradient(135deg, rgba(183, 60, 60, 0.25), rgba(30, 30, 34, 0.9)) !important; transition: transform 0.15s, filter 0.15s;
+}
+.extreme-entry:hover { transform: scale(1.01); filter: brightness(1.15); }
+.extreme-entry .x-title { font-family: var(--title-font, var(--main-font)); font-size: 20px; font-weight: 900; color: white; letter-spacing: 0.04em; }
+.extreme-entry .x-count { font-family: var(--main-font); font-size: 18px; font-weight: 800; color: #FFB938; grid-row: span 2; }
+.extreme-entry .x-text { font-family: var(--main-font); font-size: 12px; color: #ddd; opacity: 0.85; }
+.home.extreme > .panel { width: min(760px, 100%); box-sizing: border-box; }
+.x-about p { margin: 0 0 6px; font-size: 13px; line-height: 1.45; }
+.x-pick small { opacity: 0.7; margin-left: 2px; }

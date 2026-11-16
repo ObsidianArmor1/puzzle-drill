@@ -454,3 +454,34 @@ test('Learn can take a larger batch of new puzzles than the setting', () => {
   let n = 0; for (let p; (p = s.next()); ) { s.result(p, true); n++; }
   assert.equal(n, 25);
 });
+
+// ---------- Extreme (generated) collection: separate progress ----------
+test('extreme progress is kept apart from the main bank, and both travel in a backup', () => {
+  P.record('main1', true);
+  P.setScope('extreme');
+  assert.equal(P.getRec('main1'), undefined);           // main records aren't visible
+  P.record('gen1', false);
+  assert.equal(P.getDaily().today.n, 1);                // its own daily stats
+  P.setScope('main');
+  assert.equal(P.getRec('gen1'), undefined);
+  assert.ok(P.getRec('main1'));
+  assert.equal(P.getDaily().today.n, 1);
+  const backup = P.exportProgress();
+  assert.ok(JSON.parse(backup).scopes.extreme.progress.gen1);
+  P.setScope('extreme'); P.resetProgress(); P.setScope('main'); P.resetProgress();
+  P.importProgress(backup);
+  assert.ok(P.getRec('main1'));
+  P.setScope('extreme');
+  assert.ok(P.getRec('gen1'));
+  P.resetProgress();
+  P.setScope('main');
+});
+
+test('extreme sets: all, and by rating; not resolvable from the main data', () => {
+  const g = [{ id: 'g1', rating: 5 }, { id: 'g2', rating: 4 }, { id: 'g3', rating: 4 }];
+  const dx = { generated: true, title: 'Extreme', all: g, byRating: new Map([[5, [g[0]]], [4, [g[1], g[2]]]]) };
+  assert.equal(S.resolveSet(dx, 'xa').puzzles.length, 3);
+  assert.equal(S.resolveSet(dx, 'x4').puzzles.length, 2);
+  assert.equal(S.resolveSet(dx, 'x4').kind, 'extreme');
+  assert.equal(S.resolveSet({ byRating: new Map(), byId: new Map() }, 'xa'), null);
+});

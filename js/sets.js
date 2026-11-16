@@ -55,6 +55,14 @@ export const customKey = (id) => `c${id}`;
 /** Resolve a set key to { key, kind, name, rating?, puzzles, missing, set? } (null if unknown). */
 export function resolveSet(data, key) {
   if (!key) return null;
+  // Extreme (generated) collection: xa = all, x4 / x5 = by rating
+  if (key[0] === 'x') {
+    if (!data.generated) return null;
+    const r = key.slice(1);
+    const puzzles = r === 'a' ? data.all : data.byRating.get(Number(r)) || [];
+    if (!puzzles.length) return null;
+    return { key, kind: 'extreme', rating: r === 'a' ? null : Number(r), name: r === 'a' ? data.title : `${data.title} ${r}★`, puzzles, missing: 0 };
+  }
   if (key[0] === 'r') {
     const rating = Number(key.slice(1));
     const puzzles = data.byRating.get(rating);

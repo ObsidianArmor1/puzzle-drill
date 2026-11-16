@@ -1,4 +1,4 @@
-import { loadAll, decode, matchSubmission } from './data.js';
+import { loadAll, loadExtreme, decode, matchSubmission } from './data.js';
 import {
   listSets, getCustomSet, saveSet, deleteSet, togglePuzzle, importSets, resolveSet, evaluateRule, describeRule,
   ratingKey, customKey, DEFAULT_RULE, THEMES, STATUS_OPTIONS,
@@ -9,7 +9,7 @@ import { createSession, MODES, orderNew, throughStatus, resetThrough } from './s
 import {
   getSettings, setSettings, getRec, record, summarize, getDaily, resetProgress,
   exportProgress, importProgress, lastBackup, progressCount,
-  getDailyAll, bestStreak, snapshotSets, getHistory, dayKey, TIERS, tierIndex, isDue, daysUntilDue,
+  getDailyAll, bestStreak, snapshotSets, getHistory, dayKey, TIERS, tierIndex, isDue, daysUntilDue, setScope, getScope,
 } from './progress.js';
 import { PUZZLE_THEME_TEXT } from './core.js';
 
@@ -88,7 +88,13 @@ function onKey(handler) {
   window.addEventListener('keydown', f);
   cleanups.push(() => window.removeEventListener('keydown', f));
 }
-const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
+// Links stay inside the current section: in Extreme (#/x/...), '#/play/...' means '#/x/play/...'. { main: true } leaves.
+const inX = () => getScope() !== 'main';
+const H = (path) => (inX() ? '#/x' : '#') + path; // path starts with '/'
+const go = (hash, { main = false } = {}) => {
+  if (!main && inX() && hash.startsWith('#/') && !hash.startsWith('#/x/') && hash !== '#/x') hash = '#/x' + hash.slice(1);
+  if (location.hash === hash) route(); else location.hash = hash;
+};
 
 // ---------- routing ----------
 let migrated = false;
@@ -99,6 +105,18 @@ async function route() {
     return receiveView(data, () => parseShare(payload, data));
   }
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+  // Extreme: generated puzzles with their own data and progress
+  setScope(parts[0] === 'x' ? 'extreme' : 'main');
+  if (parts[0] === 'x') {
+    const dx = await loadExtreme();
+    if (!dx) return go('#/', { main: true });
+    const [view, a, b] = parts.slice(1);
+    if (view === 'play') return playView(dx, a, b);
+    if (view === 'puzzle') return puzzleView(dx, a);
+    if (view === 'browse') return browseView(dx, a || extremeKey());
+    if (view === 'summary' && lastSummary?.set?.kind === 'extreme') return renderSummary(dx, lastSummary);
+    return extremeView(dx);
+  }
   const data = await loadAll();
   if (!migrated) { migrated = true; migrateSettings(data); }
   const legacy = (k) => (k && /^\d+$/.test(k) ? ratingKey(k) : k); // old links used bare ratings
@@ -256,6 +274,12 @@ function homeView(data) {
         ${lib.map(card).join('')}
         <button class="rating-card lib-card new-set" id="new-set"><span class="plus">+</span><div class="small">New set</div></button>
       </div>
+      ${data.manifest.extreme ? `<h2 class="section">Extreme</h2>
+      <button class="panel extreme-entry" id="extreme">
+        <span class="x-title">EXTREME <span class="gen-tag">Generated</span></span>
+        <span class="x-count">${data.manifest.extreme.count.toLocaleString()} puzzles</span>
+        <span class="x-text">Generated puzzles picked to be as hard as possible for 5★ players. They aren't on nestris.org and have never been played. Separate progress.</span>
+      </button>` : ''}
     </div>`, 'scroll');
 
   root.querySelectorAll('.lib-card[data-key]').forEach((b) => (b.onclick = () => {
@@ -264,6 +288,7 @@ function homeView(data) {
     app.firstElementChild?.querySelector('.set-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }));
   root.querySelector('#new-set').onclick = () => go('#/sets/new');
+  root.querySelector('#extreme')?.addEventListener('click', () => go('#/x/', { main: true }));
   root.querySelector('#continue')?.addEventListener('click', () => go(`#/play/${contMode}/${sel.key}`));
   root.querySelector('#intro-done')?.addEventListener('click', () => { setSettings({ introDone: true }); homeView(data); });
   const hint = root.querySelector('#mode-hint');
@@ -295,7 +320,84 @@ function homeView(data) {
 }
 
 // Library order: default star sets, then custom sets oldest first
+const EXTREME_KEYS = ['xa', 'x5', 'x4'];
+const extremeKey = () => (EXTREME_KEYS.includes(getSettings().xSetKey) ? getSettings().xSetKey : 'xa');
+
+// =====================================================================================
+// EXTREME: generated puzzles, their own section with their own progress (scope 'extreme')
+// =====================================================================================
+function extremeView(dx) {
+  const s = getSettings();
+  const daily = getDaily();
+  const key = resolveSet(dx, extremeKey()) ? extremeKey() : 'xa';
+  const set = resolveSet(dx, key);
+  const list = set.puzzles;
+  const sum = summarize(list);
+  const mistakes = list.filter((p) => { const r = getRec(p.id); return r && (r.ok === false || r.c < r.n || r.b <= 1); }).length;
+  const through = throughStatus(key, list);
+  const t = daily.today;
+  const preds = list.map((p) => p.predicted).sort((a, b) => a - b);
+  const pc = (x) => `${Math.round(x * 100)}%`;
+  const hints = {
+    learn: `${MODES.learn.description} ${sum.due + sum.learning} due, up to ${s.newPerSession} new, in set order.`,
+    run: `${MODES.run.description} Picks ${Math.min(s.runSize, list.length)}.`,
+    through: `${MODES.through.description} ${through.left === 0 ? `Done: ${through.correct} / ${through.total} correct.` : through.seen ? `${through.seen} / ${through.total} played, ${through.correct} correct.` : `${through.total} puzzles in set order.`}`,
+    mistakes: MODES.mistakes.description,
+    endless: MODES.endless.description,
+  };
+  const modeBtn = (mode, badge) => `
+    <button class="mode-btn" data-mode="${mode}">
+      <img class="prevent-select" src="assets/${MODES[mode].icon}" width="30" height="30">
+      <span class="prevent-select">${MODES[mode].label}</span>${badge !== undefined && badge !== '' ? `<span class="badge">${badge}</span>` : ''}
+    </button>`;
+  const root = setView(`
+    <div class="topnav"><button class="navlink" id="back-main">‹ Puzzle Drill</button><a class="navlink" href="#/settings">Settings</a></div>
+    <div class="home extreme">
+      <header><h1 class="title">EXTREME</h1></header>
+      <p class="subtitle">${dx.all.length.toLocaleString()} generated puzzles, picked to be as hard as possible for 5★ players.</p>
+      <div class="panel x-about">
+        <p>These puzzles aren't in nestris.org's puzzle bank and have never been played, so there are no real solve rates or guess counts.
+        The answer and the engine's top 5 come from the same StackRabbit version and rating rules nestris.org uses.
+        The percentages here are a model's <b>predicted</b> solve rate for 5★ players (${pc(preds[0])}–${pc(preds[preds.length - 1])}, median ${pc(preds[Math.floor(preds.length / 2)])}).</p>
+        <p class="muted">Progress here is separate from your nestris.org puzzles: it doesn't count toward their tiers, sets or Progress page.</p>
+      </div>
+      <div class="panel set-panel">
+        <div class="row set-head"><h3>${esc(set.name)}</h3>
+          <div class="row set-actions">
+            ${EXTREME_KEYS.map((k) => { const x = resolveSet(dx, k); return x ? `<button class="pill x-pick${k === key ? ' active' : ''}" data-key="${k}">${k === 'xa' ? 'All' : `${x.rating}★`} <small>${x.puzzles.length.toLocaleString()}</small></button>` : ''; }).join('')}
+            ${solidButton({ label: 'Browse', color: '#2F3033', id: 'set-browse' })}
+          </div></div>
+        <p class="muted">${t.n ? `Today here: <b>${t.n}</b> puzzle${t.n === 1 ? '' : 's'} · ${Math.round((t.c / t.n) * 100)}% correct${t.u ? ` · <span class="tier-up">▲ ${t.u} tier${t.u === 1 ? '' : 's'} up</span>` : ''}` : 'Nothing played here today.'}</p>
+        <div class="summary-row">
+          <div class="summary-chip"><span class="v">${Math.round((sum.mastered / sum.total) * 1000) / 10}%</span><span class="k">mastered</span></div>
+          <div class="summary-chip"><span class="v">${sum.due + sum.learning}</span><span class="k">due now</span></div>
+          <div class="summary-chip"><span class="v">${(sum.total - sum.seen).toLocaleString()}</span><span class="k">never seen</span></div>
+          <div class="summary-chip"><span class="v">${sum.attempts ? Math.round((sum.correct / sum.attempts) * 100) + '%' : '–'}</span><span class="k">accuracy</span></div>
+        </div>${tierBar(sum.tiers)}
+        <div class="mode-row">
+          ${modeBtn('learn', sum.due + sum.learning || '')}
+          ${modeBtn('run', Math.min(s.runSize, list.length))}
+          ${modeBtn('through', through.left === 0 ? '✓' : through.left)}
+          ${modeBtn('mistakes', mistakes || '')}
+          ${modeBtn('endless', '')}
+        </div>
+        <p class="mode-hint" id="mode-hint">${hints.learn}</p>
+      </div>
+    </div>`, 'scroll');
+  root.querySelector('#back-main').onclick = () => go('#/', { main: true });
+  root.querySelectorAll('.x-pick').forEach((b) => (b.onclick = () => { setSettings({ xSetKey: b.dataset.key }); extremeView(dx); }));
+  root.querySelector('#set-browse').onclick = () => go(`#/browse/${key}`);
+  const hint = root.querySelector('#mode-hint');
+  root.querySelectorAll('.mode-btn[data-mode]').forEach((b) => {
+    b.onclick = () => go(`#/play/${b.dataset.mode}/${key}`);
+    b.onmouseenter = () => { hint.innerHTML = hints[b.dataset.mode]; };
+  });
+  root.querySelector('.mode-row').addEventListener('mouseleave', () => { hint.innerHTML = hints.learn; });
+  onKey((e) => { if (e.key === 'Escape') go('#/', { main: true }); });
+}
+
 function libraryKeys(data) {
+  if (data.generated) return EXTREME_KEYS.filter((k) => resolveSet(data, k));
   const builtIn = [1, 2, 3, 4, 5, 6].filter((r) => data.byRating.get(r)?.length).map(ratingKey);
   return [...builtIn, ...listSets().map((x) => customKey(x.id))];
 }
@@ -574,7 +676,7 @@ function receiveView(data, parse, source = 'link') {
 }
 
 // Global success rate for tiles; puzzles with very few attempts say so instead of showing a noisy %
-const globalLabel = (p) => !p.attempts ? 'never tried on nestris' : p.attempts < 5 ? `${p.solves}/${p.attempts} solved globally` : `${Math.round(p.successRate * 100)}% global`;
+const globalLabel = (p) => p.generated ? `generated · ${Math.round(p.predicted * 100)}% predicted` : !p.attempts ? 'never tried on nestris' : p.attempts < 5 ? `${p.solves}/${p.attempts} solved globally` : `${Math.round(p.successRate * 100)}% global`;
 
 // ---------- keybinds ----------
 const KEY_NAMES = {
@@ -631,7 +733,7 @@ function playView(data, mode, key, opts = {}) {
   const puzzles = mode === 'through' && set.kind === 'rating' ? orderNew(set.puzzles, 'hardest') : set.puzzles;
   const session = createSession(mode, set.rating, puzzles, { pick: getSettings().runPick || 'unmastered', setKey: key, ...opts });
   session.set = set;
-  setSettings({ lastMode: mode });
+  setSettings(data.generated ? { xLastMode: mode, xSetKey: key } : { lastMode: mode });
   runSession(data, session);
 }
 
@@ -644,7 +746,8 @@ function puzzleView(data, id) {
     root.querySelector('#exit').onclick = root.querySelector('#home').onclick = () => go('#/');
     return;
   }
-  const exitTo = singleReturn || '#/browse/' + (browseState.key || ratingKey(p.rating));
+  const bkey = browseState.key && (browseState.key[0] === 'x') === !!data.generated ? browseState.key : data.generated ? extremeKey() : ratingKey(p.rating);
+  const exitTo = singleReturn || '#/browse/' + bkey;
   singleReturn = null;
   runSession(data, createSession('single', p.rating, null, { puzzle: p }), { exitTo });
 }
@@ -709,7 +812,10 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
     const statsHTML = `
       <div class="puzzle-stats">
         <div class="stat"><h1>Puzzle Rating</h1>${stars(p.rating, 75)}</div>
-        ${p.hardRank ? `<div class="stat"><h1>Hardness rank</h1><p>#${p.hardRank.toLocaleString()} of ${(data.rankedByRating.get(p.rating)?.length ?? 0).toLocaleString()}</p></div>` : ''}
+        ${p.generated ? `<div class="stat"><h1>Source</h1><p class="gen-tag">Generated</p></div>
+        <div class="stat" title="A model's estimate for 5★-level players: this puzzle has never been played"><h1>Predicted 5★ solve rate</h1><p>${Math.round(p.predicted * 100)}%</p></div>
+        <div class="stat"><h1>Set order</h1><p>#${p.order.toLocaleString()} of ${data.all.length.toLocaleString()}</p></div>` : ''}
+        ${p.hardRank && !p.generated ? `<div class="stat"><h1>Hardness rank</h1><p>#${p.hardRank.toLocaleString()} of ${(data.rankedByRating.get(p.rating)?.length ?? 0).toLocaleString()}</p></div>` : ''}
         ${successRate !== null ? `<div class="stat"><h1>Success Rate</h1><p>${(successRate * 100).toFixed(0)}%</p></div>` : ''}
         ${p.attempts ? `<div class="stat"><h1>Attempts</h1><p>${p.attempts.toLocaleString()}</p></div>` : ''}
         ${p.theme ? `<div class="stat"><h1>Theme</h1><p>${esc(PUZZLE_THEME_TEXT[p.theme] ?? p.theme)}</p></div>` : ''}
@@ -725,7 +831,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
 
     const engineRows = dec.moves.map((m, i) => `
       <div class="row-container">
-        <div class="guesses"><p>${(m.guesses ?? 0).toLocaleString()}</p></div><div></div>
+        <div class="guesses"><p>${p.generated ? '–' : (m.guesses ?? 0).toLocaleString()}</p></div><div></div>
         <div class="engine-move table-rows${i === 0 ? ' first-move' : ''}${i === state.idx ? ' player-move' : ''}" data-move="${i}">
           <p><b>#${i + 1}</b></p>
           <p>${m.score === null || m.score === undefined ? '–' : m.score > 0 ? '+' + m.score : m.score}</p>
@@ -797,7 +903,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
             </div>
             <div class="puzzle-details-bottom">
               ${solved ? `
-                <select id="add-to-set" class="dark-select add-to-set"></select>
+                ${p.generated ? '' : '<select id="add-to-set" class="dark-select add-to-set"></select>'}
                 <div class="two-button-container">
                   ${solidButton({ label: 'Share', icon: 'assets/img/button-icons/link.svg', color: '#2F3033', stretch: true, id: 'share' })}
                   ${solidButton({ label: 'Retry', icon: 'assets/img/button-icons/retry.svg', color: '#2F3033', stretch: true, id: 'retry' })}
@@ -868,7 +974,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         row.onmouseleave = () => show(undefined);
       });
       root.querySelector('#retry').onclick = retry;
-      const ats = root.querySelector('#add-to-set');
+      const ats = root.querySelector('#add-to-set') || document.createElement('select');
       const fillSets = () => {
         const cs = listSets();
         ats.innerHTML = `<option value="">＋ Add this puzzle to a set…</option>` +
@@ -887,7 +993,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         fillSets();
       };
       root.querySelector('#share').onclick = () => {
-        const url = `${location.origin}${location.pathname}#/puzzle/${encodeURIComponent(p.id)}`;
+        const url = `${location.origin}${location.pathname}${H('/puzzle/' + encodeURIComponent(p.id))}`;
         navigator.clipboard?.writeText(url).then(() => toast('Puzzle link copied to clipboard!'), () => toast(url));
       };
       root.querySelector('#next').onclick = () => (session.mode === 'single' && last ? exit() : next());
@@ -923,9 +1029,10 @@ function browseView(data, key) {
   const mixed = new Set(all.map((p) => p.rating)).size > 1;
   const customs = listSets();
   if (browseState.collect && !customs.some((c) => c.id === browseState.collect)) browseState.collect = null;
-  const target = browseState.collect ? getCustomSet(browseState.collect) : null;
+  const target = browseState.collect && !data.generated ? getCustomSet(browseState.collect) : null;
   const inTarget = new Set(target?.ids || []);
   const now = Date.now();
+  if (!data.generated && browseState.sort === 'order') browseState.sort = 'global';
   const statusOf = (r) => TIERS[tierIndex(r)].key; // new · attempted · familiar · proficient · mastered
   const withRec = all.map((p) => ({ p, r: getRec(p.id) }));
   const tests = {
@@ -951,8 +1058,9 @@ function browseView(data, key) {
     id: (a, b) => a.p.id.localeCompare(b.p.id),
     accuracy: (a, b) => acc(a.r) - acc(b.r),
     recent: (a, b) => (b.r?.l || 0) - (a.r?.l || 0),
-    global: (a, b) => (a.p.successRate ?? 2) - (b.p.successRate ?? 2),
-    easiest: (a, b) => (b.p.successRate ?? -1) - (a.p.successRate ?? -1),
+    global: (a, b) => (a.p.successRate ?? a.p.predicted ?? 2) - (b.p.successRate ?? b.p.predicted ?? 2),
+    easiest: (a, b) => (b.p.successRate ?? b.p.predicted ?? -1) - (a.p.successRate ?? a.p.predicted ?? -1),
+    order: (a, b) => (a.p.order ?? 0) - (b.p.order ?? 0),
   };
   list.sort(sorters[browseState.sort] || sorters.id);
   const pages = Math.max(1, Math.ceil(list.length / PAGE));
@@ -966,14 +1074,14 @@ function browseView(data, key) {
       <div class="controls">
         <select id="b-set">${libraryKeys(data).map((k) => { const x = resolveSet(data, k); return x ? `<option value="${esc(k)}"${k === set.key ? ' selected' : ''}>${esc(x.kind === 'rating' ? `${x.rating}★ (default)` : x.name)} (${x.puzzles.length.toLocaleString()})</option>` : ''; }).join('')}</select>
         <select id="b-filter">${[['all', 'All'], ...[4, 3, 2, 1, 0].map((i) => [TIERS[i].key, TIERS[i].label]), ['due', 'Due for review'], ['missed', 'Ever missed']].map(([v, l]) => `<option value="${v}"${v === f ? ' selected' : ''}>${l} (${counts[v].toLocaleString()})</option>`).join('')}</select>
-        <select id="b-sort">${[['global', 'Sort: hardest first'], ['easiest', 'Sort: easiest first'], ['accuracy', 'Sort: your worst first'], ['recent', 'Sort: recently played'], ['id', 'Sort: puzzle ID']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <select id="b-sort">${[...(data.generated ? [['order', 'Sort: set order']] : []), ['global', data.generated ? 'Sort: hardest predicted first' : 'Sort: hardest first'], ['easiest', 'Sort: easiest first'], ['accuracy', 'Sort: your worst first'], ['recent', 'Sort: recently played'], ['id', 'Sort: puzzle ID']].map(([v, l]) => `<option value="${v}"${v === browseState.sort ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input id="b-q" placeholder="Search ID or theme" value="${esc(browseState.q)}" size="16">
         <span>${list.length.toLocaleString()} puzzles</span>
       </div>
-      <div class="controls collect">
+      ${data.generated ? '' : `<div class="controls collect">
         <label>Collect into <select id="b-collect"><option value="">— off —</option>${customs.map((c) => `<option value="${esc(c.id)}"${c.id === browseState.collect ? ' selected' : ''}>${esc(c.name)} (${c.ids.length.toLocaleString()})</option>`).join('')}<option value="__new">+ New empty set…</option></select></label>
         ${target ? `<span>Click <b>+</b> on a puzzle to add it to "${esc(target.name)}", <b>✓</b> to remove it.${list.length ? ` ${solidButton({ label: `Add all ${list.length.toLocaleString()} shown`, color: '#2F3033', id: 'b-addall' })}` : ''}</span>` : '<span class="muted">Pick a custom set to handpick puzzles into it.</span>'}
-      </div>
+      </div>`}
       <div class="legend">${[4, 3, 2, 1, 0].map((i) => TIERS[i]).map(({ key: k, label, tip }) => `<button class="legend-item${f === k ? ' active' : ''}" data-filter="${k}" title="${tip}"><span class="tier-badge t-${k}">${label}</span><b>${counts[k].toLocaleString()}</b></button>`).join('')}
         ${f !== 'all' ? '<button class="legend-item" data-filter="all">Show all</button>' : ''}</div>
       <div class="grid" id="grid"></div>
@@ -989,7 +1097,7 @@ function browseView(data, key) {
   for (const { p, r } of slice) {
     const d = decode(p);
     const tile = document.createElement('a');
-    tile.href = `#/puzzle/${encodeURIComponent(p.id)}`;
+    tile.href = H(`/puzzle/${encodeURIComponent(p.id)}`);
     const st = statusOf(r);
     const label = TIERS[tierIndex(r)].label;
     const review = !r ? '' : r.b <= 1 ? 'retry now' : isDue(r, now) ? 'review due' : `review ${reviewIn(r, now)}`;
@@ -1013,7 +1121,7 @@ function browseView(data, key) {
   root.querySelector('#exit').onclick = () => go('#/');
   const rerender = () => browseView(data, set.key);
   root.querySelector('#b-set').onchange = (e) => { browseState.page = 0; go(`#/browse/${e.target.value}`); };
-  root.querySelector('#b-collect').onchange = (e) => {
+  (root.querySelector('#b-collect') || {}).onchange = (e) => {
     if (e.target.value === '__new') {
       const name = (prompt('Name for the new set:', 'My set') || '').trim();
       if (!name) { e.target.value = browseState.collect || ''; return; }
@@ -1188,7 +1296,7 @@ function renderSummary(data, session) {
     ${outlineButton('Exit', 'leave-fullscreen-button', 'exit')}
     <div class="content summary-page">
       <div class="end-card">
-        ${session.set?.kind === 'custom' ? `<p class="set-title">${esc(session.set.name)}</p>` : stars(session.rating, 90)}
+        ${session.set?.kind === 'custom' || session.set?.kind === 'extreme' ? `<p class="set-title">${esc(session.set.name)}</p>` : stars(session.rating, 90)}
         <h1>${session.mode === 'run' ? (perfect ? 'Perfect run!' : 'Run complete') : session.mode === 'through' ? (session.finished ? 'Play-through complete!' : 'Play-through paused') : session.done ? 'Session complete' : 'Nothing to do here'}</h1>
         ${session.mode === 'through' ? `<p class="engine-note" style="font-size:13px">${session.finished
           ? `You've played all ${session.total} puzzles in this set: ${session.correctBefore + session.correct} correct on the first try.`
@@ -1221,7 +1329,7 @@ function renderSummary(data, session) {
     const d = decode(p);
     const best = d.moves[0];
     const tile = document.createElement('a');
-    tile.href = `#/puzzle/${encodeURIComponent(p.id)}`;
+    tile.href = H(`/puzzle/${encodeURIComponent(p.id)}`);
     tile.className = 'tile st-learning';
     tile.innerHTML = `<div class="b"></div>
       <div class="meta"><span>Best: <b>${esc(best.first.getTetrisNotation())} · ${esc(best.second.getTetrisNotation())}</b></span>${d.review ? `<span class="review-tag" title="A patched StackRabbit prefers ${esc(d.review.first.getTetrisNotation())} · ${esc(d.review.second.getTetrisNotation())}">SR+ disagrees</span>` : ''}</div>

@@ -81,6 +81,7 @@ mkdirSync(dataDir, { recursive: true });
 const previousManifest = existsSync(join(dataDir, 'manifest.json')) ? JSON.parse(readFileSync(join(dataDir, 'manifest.json'), 'utf8')) : {};
 const manifest = { generatedAt: new Date().toISOString(), ratings: {} };
 if (previousManifest.engineReview) manifest.engineReview = previousManifest.engineReview; // see tools/import-engine-review.mjs
+if (previousManifest.extreme) manifest.extreme = previousManifest.extreme; // see tools/import-generated.mjs
 const byRating = new Map();
 for (const rec of byId.values()) {
   if (!byRating.has(rec.r)) byRating.set(rec.r, []);
