@@ -160,7 +160,9 @@ class MistakesSession extends Session {
 }
 
 // ---------- Play Through ----------
-// Position is kept per set in localStorage: { [setKey]: { seen: [puzzle ids], correct: n } }.
+// Position is kept per set in localStorage: { [setKey]: { seen: [puzzle ids], ok: [ids right first time] } }.
+// Only ids still in the set count, so puzzles later removed from a set don't skew the numbers. (Older entries have
+// a bare `correct` count instead of `ok`.)
 const THROUGH_KEY = 'pd.through.v1';
 const readThrough = () => { try { return JSON.parse(localStorage.getItem(THROUGH_KEY)) || {}; } catch { return {}; } };
 const writeThrough = (all) => { try { localStorage.setItem(THROUGH_KEY, JSON.stringify(all)); } catch { /* storage full or blocked */ } };
@@ -169,7 +171,8 @@ export function throughStatus(setKey, puzzles) {
   const t = readThrough()[setKey];
   const ids = new Set(puzzles.map((p) => p.id));
   const seen = (t?.seen || []).filter((id) => ids.has(id)).length;
-  return { seen, correct: Math.min(t?.correct || 0, seen), total: puzzles.length, left: puzzles.length - seen };
+  const correct = t?.ok ? t.ok.filter((id) => ids.has(id)).length : Math.min(t?.correct || 0, seen);
+  return { seen, correct, total: puzzles.length, left: puzzles.length - seen };
 }
 export function resetThrough(setKey) { const all = readThrough(); delete all[setKey]; writeThrough(all); }
 
@@ -179,19 +182,21 @@ class ThroughSession extends Session {
     super('through', rating);
     this.setKey = setKey;
     if (throughStatus(setKey, puzzles).left === 0) resetThrough(setKey);
-    const t = readThrough()[setKey] || { seen: [], correct: 0 };
+    const t = readThrough()[setKey] || { seen: [], ok: [] };
     const seen = new Set(t.seen);
     this.total = puzzles.length;
-    this.seenBefore = puzzles.filter((p) => seen.has(p.id)).length;
-    this.correctBefore = Math.min(t.correct, this.seenBefore);
+    const status = throughStatus(setKey, puzzles);
+    this.seenBefore = status.seen;
+    this.correctBefore = status.correct;
     this.queue = puzzles.filter((p) => !seen.has(p.id));
   }
   next() { return this.queue.shift() || null; }
   result(puzzle, correct) {
     super.result(puzzle, correct);
     const all = readThrough();
-    const t = all[this.setKey] || { seen: [], correct: 0 };
-    if (!t.seen.includes(puzzle.id)) { t.seen.push(puzzle.id); if (correct) t.correct++; }
+    const t = all[this.setKey] || { seen: [], ok: [] };
+    if (!t.ok) t.ok = []; // older entries only had a count
+    if (!t.seen.includes(puzzle.id)) { t.seen.push(puzzle.id); if (correct) { t.ok.push(puzzle.id); t.correct = (t.correct || 0) + 1; } }
     all[this.setKey] = t;
     writeThrough(all);
   }

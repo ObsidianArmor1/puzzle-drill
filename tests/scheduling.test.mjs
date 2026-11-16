@@ -485,3 +485,12 @@ test('extreme sets: all, and by rating; not resolvable from the main data', () =
   assert.equal(S.resolveSet(dx, 'x4').kind, 'extreme');
   assert.equal(S.resolveSet({ byRating: new Map(), byId: new Map() }, 'xa'), null);
 });
+
+test('Play Through ignores puzzles that were removed from the set', () => {
+  const list = mk(5);
+  playAll(createSession('through', 4, list, { setKey: 'cR' }), (p) => p.id !== 't001', 3); // t000 ok, t001 miss, t002 ok
+  const shrunk = list.filter((p) => p.id !== 't000');                                       // t000 leaves the set
+  assert.deepEqual(throughStatus('cR', shrunk), { seen: 2, correct: 1, total: 4, left: 2 });
+  const s = createSession('through', 4, shrunk, { setKey: 'cR' });
+  assert.deepEqual(playAll(s), ['t003', 't004']);
+});
