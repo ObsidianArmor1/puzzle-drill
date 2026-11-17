@@ -858,11 +858,33 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
           ? `<p class="engine-note practice-note">Correct! This one is next due ${reviewIn(rec)}, so this answer is practice: tiers only move up on a review after time away.</p>` : ''}
       </div>`;
 
+    // BetaTetris: a small chip on the engine row it plays; its own row only when it plays something outside the top 5
+    const bt = btFor(p);
+    // Not loaded yet: fetch it in the background and redraw this solution screen when it arrives
+    if (solved && !bt && data.manifest?.betatetris) {
+      const shown = state;
+      loadBetaTetris(data.manifest).then((d) => { if (d && state === shown && state.phase === 'solution' && d[p.id]) render(); });
+    }
+    const btIdx = bt ? matchSubmission(dec.moves, bt.first, bt.second) : -1;
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const btTip = bt ? `BetaTetris (neural-net NES Tetris AI) plays this: ${pct(bt.p1)} sure of the first piece, ${pct(bt.p2)} of the second${bt.odd ? '. This board has an odd number of cells, which a real game can\'t produce, so it\'s approximate' : ''}` : '';
+    const btChip = (i) => (solved && bt && btIdx === i ? `<span class="bt-chip" title="${esc(btTip)}">BT</span>` : '');
+    const btRow = solved && bt && btIdx === -1 ? `
+      <div class="row-container">
+        <div class="guesses"><p></p></div><div></div>
+        <div class="engine-move table-rows bt-move" data-move="bt" title="${esc(btTip)}">
+          <p><b>BT</b></p>
+          <p>${pct(bt.p1)}</p>
+          <p>${esc(bt.first.getTetrisNotation())}</p>
+          <p>${esc(bt.second.getTetrisNotation())}</p>
+        </div>
+      </div>` : '';
+
     const engineRows = dec.moves.map((m, i) => `
       <div class="row-container">
         <div class="guesses"><p>${p.generated ? '–' : (m.guesses ?? 0).toLocaleString()}</p></div><div></div>
         <div class="engine-move table-rows${i === 0 ? ' first-move' : ''}${i === state.idx ? ' player-move' : ''}" data-move="${i}">
-          <p><b>#${i + 1}</b></p>
+          <p><b>#${i + 1}</b>${btChip(i)}</p>
           <p>${m.score === null || m.score === undefined ? '–' : m.score > 0 ? '+' + m.score : m.score}</p>
           <p>${esc(m.first.getTetrisNotation())}</p>
           <p>${esc(m.second.getTetrisNotation())}</p>
@@ -874,42 +896,21 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
     const rv = dec.review;
     const sub0 = state.submission;
     const youFoundReview = !!(rv && sub0?.first && sub0?.second && matchSubmission([rv], sub0.first, sub0.second) === 0);
+    const shortHow = (h) => h.replace(/\b(a|an|then|another)\b/g, '').replace(/\s+/g, ' ').replace(/ ,/g, ',').trim();
+    const reviewTip = rv ? `A patched StackRabbit that sees every NES-reachable placement ${rv.kind === 'answer'
+        ? 'prefers SR+ by more than 3 points at both 30 Hz and 12 Hz, so under nestris.org\'s own rating rules it would be this puzzle\'s answer.'
+        : 'rates SR+ slightly higher (within 3 points), so under nestris.org\'s rules this puzzle would be too close to call.'} ${rv.how ? `It needs ${rv.how}, playable at 12 Hz.` : 'It needs no special input: the patched engine just rates the position after it higher, because it counts later tucks correctly.'}${rv.was !== null && rv.was !== undefined ? ` Patched scores: ${rv.score} vs ${rv.was} for #1.` : ''} nestris.org still counts #1 as the answer.` : '';
     const reviewRow = solved && rv ? `
       <div class="row-container">
         <div class="guesses"><p></p></div><div></div>
-        <div class="engine-move table-rows review-move${youFoundReview ? ' player-move' : ''}" data-move="review" title="Patched StackRabbit's move (not graded)">
+        <div class="engine-move table-rows review-move${youFoundReview ? ' player-move' : ''}" data-move="review" title="${esc(reviewTip)}">
           <p><b>SR+</b></p>
           <p>${rv.score > 0 ? '+' + rv.score : rv.score}</p>
           <p>${esc(rv.first.getTetrisNotation())}</p>
           <p>${esc(rv.second.getTetrisNotation())}</p>
         </div>
       </div>` : '';
-    // BetaTetris: one row in the table plus a short verdict
-    const bt = btFor(p);
-    // Not loaded yet: fetch it in the background and redraw this solution screen when it arrives
-    if (solved && !bt && data.manifest?.betatetris) {
-      const shown = state;
-      loadBetaTetris(data.manifest).then((d) => { if (d && state === shown && state.phase === 'solution' && d[p.id]) render(); });
-    }
-    const btIdx = bt ? matchSubmission(dec.moves, bt.first, bt.second) : -1;
-    const pct = (x) => `${Math.round(x * 100)}%`;
-    const btRow = solved && bt ? `
-      <div class="row-container">
-        <div class="guesses"><p></p></div><div></div>
-        <div class="engine-move table-rows bt-move" data-move="bt" title="BetaTetris (neural-net NES Tetris AI): how sure it is of each piece: ${pct(bt.p1)} / ${pct(bt.p2)}">
-          <p><b>BT</b></p>
-          <p>${pct(bt.p1)}</p>
-          <p>${esc(bt.first.getTetrisNotation())}</p>
-          <p>${esc(bt.second.getTetrisNotation())}</p>
-        </div>
-      </div>` : '';
-    const btNote = solved && bt ? `<p class="engine-note bt-note"><b>BetaTetris</b> ${btIdx === 0 ? 'agrees with #1' : btIdx > 0 ? `plays StackRabbit's #${btIdx + 1}` : 'plays a move outside StackRabbit\'s top 5'} (${pct(bt.p1)} / ${pct(bt.p2)} sure${bt.odd ? '; this board has an odd number of cells, which a real game can\'t produce, so it\'s approximate' : ''}).</p>` : '';
-
-    const reviewNote = solved && rv ? `<p class="engine-note review-note">${youFoundReview ? 'You found it! ' : ''}A patched StackRabbit that sees every NES-reachable placement ${rv.kind === 'answer'
-        ? 'prefers <b>SR+</b> by more than 3 points at both 30 Hz and 12 Hz, so under nestris.org\'s own rating rules it would be this puzzle\'s answer.'
-        : 'rates <b>SR+</b> slightly higher (within 3 points), so under nestris.org\'s rules this puzzle would be too close to call.'}
-      ${rv.how ? `It needs ${esc(rv.how)}, playable at 12 Hz.` : 'It needs no special input: the patched engine just rates the position after it higher, because it counts later tucks correctly.'}
-      ${rv.was !== null && rv.was !== undefined ? `(Patched scores: ${rv.score} vs ${rv.was} for #1.)` : ''} nestris.org still counts #1 as the answer.</p>` : '';
+    const reviewNote = solved && rv ? `<p class="engine-note review-note" title="${esc(reviewTip)}">${youFoundReview ? 'You found it! ' : ''}<b>SR+</b> ${rv.kind === 'answer' ? 'would be the answer under nestris.org\'s rules' : 'is within 3 points of #1'} · ${rv.how ? `needs ${esc(shortHow(rv.how))}` : 'no special input'} <span class="info">ⓘ</span></p>` : '';
 
     const yourMoveRow = solved && state.idx === -1 && !youFoundReview && state.submission?.first && state.submission?.second ? `
       <div class="row-container">
@@ -949,9 +950,10 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
                   <div class="engine-container">
                     <div class="row-container"><div class="labels"><p>Guesses</p></div><div></div>
                       <div class="labels table-rows"><p>Rank</p><p>Score</p><p>Current</p><p>Next</p></div></div>
-                    ${engineRows}${yourMoveRow}${reviewRow}${btRow}
+                    ${engineRows}${yourMoveRow}
+                    ${reviewRow || btRow ? `<div class="row-container"><div></div><div></div><p class="other-engines">Other engines</p></div>${reviewRow}${btRow}` : ''}
                   </div>
-                  ${btNote}${reviewNote}
+                  ${reviewNote}
                 </div>
               `}
             </div>

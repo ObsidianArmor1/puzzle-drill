@@ -531,3 +531,9 @@ button.navlink { font-family: var(--main-font); cursor: pointer; }
 .engine-move.bt-move { background-color: rgba(64, 160, 200, 0.28); margin-top: 4px; }
 .bt-note { opacity: 0.85; max-width: 320px; line-height: 1.4; margin-top: 6px; }
 .bt-note b { color: #7CC8E6; }
+
+/* Other engines: divider, BetaTetris chip, one-line notes */
+.other-engines { font-family: var(--main-font); font-size: 9px; font-weight: 500; text-align: left; opacity: 0.6; margin: 6px 0 3px; padding-top: 5px; border-top: 1px solid rgba(255,255,255,0.12); }
+.bt-chip { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; background: #7CC8E6; color: #0c2a36; font-size: 9px; font-weight: 800; line-height: 13px; vertical-align: 1px; cursor: help; }
+.review-note { cursor: help; }
+.review-note .info, .engine-note .info { opacity: 0.6; }
