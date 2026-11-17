@@ -872,7 +872,8 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
     const sc = (x) => (x > 0 ? `+${x}` : `${x}`);
     const btTip = bt ? [
       `BetaTetris (neural-net NES Tetris AI) plays this: ${pct(bt.p1)} sure of the first piece, ${pct(bt.p2)} of the second.`,
-      bt.onSr1 ? `It gives StackRabbit's #1 ${pct(bt.onSr1[0])} for the first piece${bt.onSr1[1] !== null ? ` and ${pct(bt.onSr1[1])} for the second` : ''}.` : '',
+      // Its probability for #1 only says something when it's substantial (its policy is very peaked): then it was torn
+      bt.onSr1 && bt.onSr1[0] >= 0.1 ? `A close call for BetaTetris too: it gives StackRabbit's #1 ${pct(bt.onSr1[0])}${bt.onSr1[1] !== null ? ` (and ${pct(bt.onSr1[1])} for its second piece)` : ''}.` : '',
       bt.srScore !== null ? `StackRabbit scores this move ${sc(bt.srScore)}${dec.moves[0]?.score != null ? ` (vs ${sc(dec.moves[0].score)} for #1)` : ''}${bt.srScore > (dec.moves[0]?.score ?? Infinity) ? (bt.srCantFind ? ', higher than #1' : ', higher than #1: its shortlist missed it') : ''}.` : '',
       bt.srCantFind ? 'The original StackRabbit\'s move search can\'t find this placement at all.' : '',
       bt.odd ? 'This board has an odd number of cells, which a real game can\'t produce, so it\'s approximate.' : '',
