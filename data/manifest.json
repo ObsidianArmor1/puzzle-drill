@@ -43,5 +43,9 @@
     "js": "engine/ratepair.e676ecb61c.js",
     "wasm": "engine/ratepair.b214686a77.wasm",
     "query": "X.|343|3 (nestris.org generator query)"
+  },
+  "betatetris": {
+    "file": "betatetris.1f9dfd2eb4.json",
+    "count": 43480
   }
 }

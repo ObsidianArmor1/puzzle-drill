@@ -74,6 +74,29 @@ function add(byId, rec) {
   });
 }
 
+// BetaTetris's choice per puzzle (tools/import-betatetris.mjs), for both the bank and Extreme. About 5 MB, so it's
+// loaded in the background the first time a solution screen asks for it, never blocking page load.
+let btData = null, btPromise = null;
+export function loadBetaTetris(manifest) {
+  if (!manifest?.betatetris?.file) return Promise.resolve(null);
+  btPromise ||= fetch(`data/${manifest.betatetris.file}`).then((r) => r.json())
+    .then((j) => { btData = j.puzzles; return btData; })
+    .catch((e) => { console.warn('Failed to load BetaTetris data', e); btPromise = null; return null; });
+  return btPromise;
+}
+const btDecoded = new Map();
+/** BetaTetris's pair for a puzzle if its data has loaded: { first, second, p1, p2, odd }; null if not (yet). */
+export function btFor(p) {
+  const r = btData?.[p.id];
+  if (!r) return null;
+  let d = btDecoded.get(p.id);
+  if (!d) {
+    d = { first: MoveableTetromino.fromInt2(r.f[0]), second: MoveableTetromino.fromInt2(r.s[0]), p1: r.f[1], p2: r.s[1], odd: !!r.o };
+    btDecoded.set(p.id, d);
+  }
+  return d;
+}
+
 // ---------- Extreme: generated puzzles, a separate collection ----------
 // Never played on nestris.org, so no attempts/solves: `predicted` is a model's 5★ solve rate, `chance` its chance of
 // being extreme, `order` the set's selection order (1 = most likely extreme / most varied first).

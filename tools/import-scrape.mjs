@@ -83,6 +83,7 @@ const manifest = { generatedAt: new Date().toISOString(), ratings: {} };
 if (previousManifest.engineReview) manifest.engineReview = previousManifest.engineReview; // see tools/import-engine-review.mjs
 if (previousManifest.extreme) manifest.extreme = previousManifest.extreme; // see tools/import-generated.mjs
 if (previousManifest.rater) manifest.rater = previousManifest.rater; // see tools/import-engine.mjs
+if (previousManifest.betatetris) manifest.betatetris = previousManifest.betatetris; // see tools/import-betatetris.mjs
 const byRating = new Map();
 for (const rec of byId.values()) {
   if (!byRating.has(rec.r)) byRating.set(rec.r, []);

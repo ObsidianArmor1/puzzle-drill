@@ -1,4 +1,4 @@
-import { loadAll, loadExtreme, decode, matchSubmission } from './data.js';
+import { loadAll, loadExtreme, decode, matchSubmission, loadBetaTetris, btFor } from './data.js';
 import { ratePair } from './rater.js';
 import {
   listSets, getCustomSet, saveSet, deleteSet, togglePuzzle, importSets, resolveSet, evaluateRule, describeRule,
@@ -884,6 +884,27 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
           <p>${esc(rv.second.getTetrisNotation())}</p>
         </div>
       </div>` : '';
+    // BetaTetris: one row in the table plus a short verdict
+    const bt = btFor(p);
+    // Not loaded yet: fetch it in the background and redraw this solution screen when it arrives
+    if (solved && !bt && data.manifest?.betatetris) {
+      const shown = state;
+      loadBetaTetris(data.manifest).then((d) => { if (d && state === shown && state.phase === 'solution' && d[p.id]) render(); });
+    }
+    const btIdx = bt ? matchSubmission(dec.moves, bt.first, bt.second) : -1;
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const btRow = solved && bt ? `
+      <div class="row-container">
+        <div class="guesses"><p></p></div><div></div>
+        <div class="engine-move table-rows bt-move" data-move="bt" title="BetaTetris (neural-net NES Tetris AI): how sure it is of each piece: ${pct(bt.p1)} / ${pct(bt.p2)}">
+          <p><b>BT</b></p>
+          <p>${pct(bt.p1)}</p>
+          <p>${esc(bt.first.getTetrisNotation())}</p>
+          <p>${esc(bt.second.getTetrisNotation())}</p>
+        </div>
+      </div>` : '';
+    const btNote = solved && bt ? `<p class="engine-note bt-note"><b>BetaTetris</b> ${btIdx === 0 ? 'agrees with #1' : btIdx > 0 ? `plays StackRabbit's #${btIdx + 1}` : 'plays a move outside StackRabbit\'s top 5'} (${pct(bt.p1)} / ${pct(bt.p2)} sure${bt.odd ? '; this board has an odd number of cells, which a real game can\'t produce, so it\'s approximate' : ''}).</p>` : '';
+
     const reviewNote = solved && rv ? `<p class="engine-note review-note">${youFoundReview ? 'You found it! ' : ''}A patched StackRabbit that sees every NES-reachable placement ${rv.kind === 'answer'
         ? 'prefers <b>SR+</b> by more than 3 points at both 30 Hz and 12 Hz, so under nestris.org\'s own rating rules it would be this puzzle\'s answer.'
         : 'rates <b>SR+</b> slightly higher (within 3 points), so under nestris.org\'s rules this puzzle would be too close to call.'}
@@ -928,9 +949,9 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
                   <div class="engine-container">
                     <div class="row-container"><div class="labels"><p>Guesses</p></div><div></div>
                       <div class="labels table-rows"><p>Rank</p><p>Score</p><p>Current</p><p>Next</p></div></div>
-                    ${engineRows}${yourMoveRow}${reviewRow}
+                    ${engineRows}${yourMoveRow}${reviewRow}${btRow}
                   </div>
-                  ${reviewNote}
+                  ${btNote}${reviewNote}
                 </div>
               `}
             </div>
@@ -1017,7 +1038,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
         });
       }
       root.querySelectorAll('.engine-move[data-move]').forEach((row) => {
-        row.onmouseenter = () => show(row.dataset.move === 'you' ? undefined : row.dataset.move === 'review' ? dec.review : dec.moves[Number(row.dataset.move)]);
+        row.onmouseenter = () => show(row.dataset.move === 'you' ? undefined : row.dataset.move === 'review' ? dec.review : row.dataset.move === 'bt' ? btFor(p) : dec.moves[Number(row.dataset.move)]);
         row.onmouseleave = () => show(undefined);
       });
       root.querySelector('#retry').onclick = retry;

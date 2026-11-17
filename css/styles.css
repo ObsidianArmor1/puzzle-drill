@@ -526,3 +526,8 @@ button.navlink { font-family: var(--main-font); cursor: pointer; }
 }
 .tile:hover .nestris-link, .nestris-link:focus-visible { opacity: 1; }
 .nestris-link:hover { background: var(--puzzle); }
+
+/* BetaTetris row and verdict */
+.engine-move.bt-move { background-color: rgba(64, 160, 200, 0.28); margin-top: 4px; }
+.bt-note { opacity: 0.85; max-width: 320px; line-height: 1.4; margin-top: 6px; }
+.bt-note b { color: #7CC8E6; }
