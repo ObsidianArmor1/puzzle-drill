@@ -858,6 +858,8 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
           ? `<p class="engine-note practice-note">Correct! This one is next due ${reviewIn(rec)}, so this answer is practice: tiers only move up on a review after time away.</p>` : ''}
       </div>`;
 
+    const rv = dec.review;
+    const sub0 = state.submission;
     // BetaTetris: a small chip on the engine row it plays; its own row only when it plays something outside the top 5
     const bt = btFor(p);
     // Not loaded yet: fetch it in the background and redraw this solution screen when it arrives
@@ -866,15 +868,25 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       loadBetaTetris(data.manifest).then((d) => { if (d && state === shown && state.phase === 'solution' && d[p.id]) render(); });
     }
     const btIdx = bt ? matchSubmission(dec.moves, bt.first, bt.second) : -1;
-    const pct = (x) => `${Math.round(x * 100)}%`;
-    const btTip = bt ? `BetaTetris (neural-net NES Tetris AI) plays this: ${pct(bt.p1)} sure of the first piece, ${pct(bt.p2)} of the second${bt.odd ? '. This board has an odd number of cells, which a real game can\'t produce, so it\'s approximate' : ''}` : '';
+    const pct = (x) => (x > 0 && x < 0.01 ? 'under 1%' : `${Math.round(x * 100)}%`);
+    const sc = (x) => (x > 0 ? `+${x}` : `${x}`);
+    const btTip = bt ? [
+      `BetaTetris (neural-net NES Tetris AI) plays this: ${pct(bt.p1)} sure of the first piece, ${pct(bt.p2)} of the second.`,
+      bt.onSr1 ? `It gives StackRabbit's #1 ${pct(bt.onSr1[0])} for the first piece${bt.onSr1[1] !== null ? ` and ${pct(bt.onSr1[1])} for the second` : ''}.` : '',
+      bt.srScore !== null ? `StackRabbit scores this move ${sc(bt.srScore)}${dec.moves[0]?.score != null ? ` (vs ${sc(dec.moves[0].score)} for #1)` : ''}${bt.srScore > (dec.moves[0]?.score ?? Infinity) ? (bt.srCantFind ? ', higher than #1' : ', higher than #1: its shortlist missed it') : ''}.` : '',
+      bt.srCantFind ? 'The original StackRabbit\'s move search can\'t find this placement at all.' : '',
+      bt.odd ? 'This board has an odd number of cells, which a real game can\'t produce, so it\'s approximate.' : '',
+    ].filter(Boolean).join(' ') : '';
+    // Your move or the SR+ move may be BetaTetris's move: show it once
+    const youFoundBT = !!(bt && btIdx === -1 && sub0?.first && sub0?.second && matchSubmission([bt], sub0.first, sub0.second) === 0);
+    const btOnReview = !!(bt && rv && btIdx === -1 && matchSubmission([rv], bt.first, bt.second) === 0);
     const btChip = (i) => (solved && bt && btIdx === i ? `<span class="bt-chip" title="${esc(btTip)}">BT</span>` : '');
-    const btRow = solved && bt && btIdx === -1 ? `
+    const btRow = solved && bt && btIdx === -1 && !btOnReview ? `
       <div class="row-container">
         <div class="guesses"><p></p></div><div></div>
-        <div class="engine-move table-rows bt-move" data-move="bt" title="${esc(btTip)}">
-          <p><b>BT</b></p>
-          <p>${pct(bt.p1)}</p>
+        <div class="engine-move table-rows bt-move${youFoundBT ? ' player-move' : ''}" data-move="bt" title="${esc(btTip)}">
+          <p><b>BT</b>${youFoundBT ? ' <span class="you-tag">you</span>' : ''}</p>
+          <p>${bt.srScore !== null ? sc(bt.srScore) : '–'}</p>
           <p>${esc(bt.first.getTetrisNotation())}</p>
           <p>${esc(bt.second.getTetrisNotation())}</p>
         </div>
@@ -893,8 +905,6 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
 
     // Patched StackRabbit (sees every NES-reachable placement) prefers a different move on a few puzzles.
     // Shown for information only: grading follows nestris.org.
-    const rv = dec.review;
-    const sub0 = state.submission;
     const youFoundReview = !!(rv && sub0?.first && sub0?.second && matchSubmission([rv], sub0.first, sub0.second) === 0);
     const shortHow = (h) => h.replace(/\b(a|an|then|another)\b/g, '').replace(/\s+/g, ' ').replace(/ ,/g, ',').trim();
     const reviewTip = rv ? `A patched StackRabbit that sees every NES-reachable placement ${rv.kind === 'answer'
@@ -904,7 +914,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       <div class="row-container">
         <div class="guesses"><p></p></div><div></div>
         <div class="engine-move table-rows review-move${youFoundReview ? ' player-move' : ''}" data-move="review" title="${esc(reviewTip)}">
-          <p><b>SR+</b></p>
+          <p><b>SR+</b>${btOnReview ? `<span class="bt-chip" title="${esc(btTip)}">BT</span>` : ''}</p>
           <p>${rv.score > 0 ? '+' + rv.score : rv.score}</p>
           <p>${esc(rv.first.getTetrisNotation())}</p>
           <p>${esc(rv.second.getTetrisNotation())}</p>
@@ -912,7 +922,7 @@ function runSession(data, session, { exitTo = '#/' } = {}) {
       </div>` : '';
     const reviewNote = solved && rv ? `<p class="engine-note review-note" title="${esc(reviewTip)}">${youFoundReview ? 'You found it! ' : ''}<b>SR+</b> ${rv.kind === 'answer' ? 'would be the answer under nestris.org\'s rules' : 'is within 3 points of #1'} · ${rv.how ? `needs ${esc(shortHow(rv.how))}` : 'no special input'} <span class="info">ⓘ</span></p>` : '';
 
-    const yourMoveRow = solved && state.idx === -1 && !youFoundReview && state.submission?.first && state.submission?.second ? `
+    const yourMoveRow = solved && state.idx === -1 && !youFoundReview && !youFoundBT && state.submission?.first && state.submission?.second ? `
       <div class="row-container">
         <div class="guesses"><p></p></div><div></div>
         <div class="engine-move table-rows player-move" data-move="you">

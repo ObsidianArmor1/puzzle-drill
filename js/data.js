@@ -91,7 +91,11 @@ export function btFor(p) {
   if (!r) return null;
   let d = btDecoded.get(p.id);
   if (!d) {
-    d = { first: MoveableTetromino.fromInt2(r.f[0]), second: MoveableTetromino.fromInt2(r.s[0]), p1: r.f[1], p2: r.s[1], odd: !!r.o };
+    d = {
+      first: MoveableTetromino.fromInt2(r.f[0]), second: MoveableTetromino.fromInt2(r.s[0]), p1: r.f[1], p2: r.s[1], odd: !!r.o,
+      srScore: r.r ?? null, srCantFind: !!r.n, // StackRabbit's score for this pair (when it isn't in SR's top 5)
+      onSr1: r.w ?? null,                        // its probability for SR #1's first [and second] placement
+    };
     btDecoded.set(p.id, d);
   }
   return d;

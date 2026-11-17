@@ -537,3 +537,4 @@ button.navlink { font-family: var(--main-font); cursor: pointer; }
 .bt-chip { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 999px; background: #7CC8E6; color: #0c2a36; font-size: 9px; font-weight: 800; line-height: 13px; vertical-align: 1px; cursor: help; }
 .review-note { cursor: help; }
 .review-note .info, .engine-note .info { opacity: 0.6; }
+.you-tag { font-size: 9px; font-weight: 700; opacity: 0.8; }
